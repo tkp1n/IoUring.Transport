@@ -34,27 +34,6 @@ namespace IoUring.Transport.Internals
             if (rv < 0) throw new ErrnoException(errno);
         }
 
-        public unsafe LinuxSocket Accept(out IPEndPoint endPoint)
-        {
-            sockaddr_storage addr;
-            socklen_t len = SizeOf.sockaddr_storage;
-            var rv = accept4(_fd, (sockaddr*)&addr, &len, SOCK_NONBLOCK | SOCK_CLOEXEC);
-            if (rv < 0)
-            {
-                var err = errno;
-                if (err == EAGAIN || err == EWOULDBLOCK || err == EINTR)
-                {
-                    endPoint = default;
-                    return -1;
-                }
-
-                throw new ErrnoException(err);
-            }
-
-            endPoint = IPEndPointFormatter.AddrToIpEndPoint(&addr);
-            return rv;
-        }
-
         public unsafe EndPoint GetLocalAddress()
         {
             sockaddr_storage addr;

@@ -10,7 +10,6 @@ using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using IoUring.Transport.Internals.Inbound;
-using IoUring.Transport.Internals.Metrics;
 using IoUring.Transport.Internals.Outbound;
 using Microsoft.AspNetCore.Connections;
 using Tmds.Linux;
@@ -18,33 +17,39 @@ using static Tmds.Linux.LibC;
 
 namespace IoUring.Transport.Internals
 {
-    internal sealed unsafe class TransportThread
+    [Flags]
+    internal enum CompletionType : uint
+    {
+        Read        = 1,
+        Write       = 1 << 1,
+        EventFdPoll = 1 << 2,
+        Connect     = 1 << 3,
+        Accept      = 1 << 4
+    }
+
+    internal sealed unsafe class TransportThread : IAsyncDisposable
     {
         private const int RingSize = 4096;
         private const int ListenBacklog = 128;
         private const int MaxLoopsWithoutCompletion = 3;
         private const int MaxLoopsWithoutSubmission = 3;
-        private const ulong ReadMask =        0x100000000UL << 0;
-        private const ulong WriteMask =       0x100000000UL << 1;
-        private const ulong ReadPollMask =    0x100000000UL << 2;
-        private const ulong WritePollMask =   0x100000000UL << 3;
-        private const ulong AcceptPollMask =  0x100000000UL << 4;
-        private const ulong EventFdPollMask = 0x100000000UL << 5;
-        private const ulong ConnectMask =     0x100000000UL << 6;
+        public const ulong ReadMask =        (ulong) CompletionType.Read << 32;
+        public const ulong WriteMask =       (ulong) CompletionType.Write << 32;
+        private const ulong EventFdPollMask = (ulong) CompletionType.EventFdPoll << 32;
+        private const ulong ConnectMask =     (ulong) CompletionType.Connect << 32;
+        private const ulong AcceptMask =      (ulong) CompletionType.Accept << 32;
 
         private static int _threadId;
 
         private readonly Ring _ring;
-        // TODO: One queue would probably suffice
-        private readonly ConcurrentQueue<AcceptSocketContext> _acceptSocketQueue = new ConcurrentQueue<AcceptSocketContext>();
-        private readonly ConcurrentQueue<OutboundConnectionContext> _clientSocketQueue = new ConcurrentQueue<OutboundConnectionContext>();
-        private readonly ConcurrentQueue<IoUringConnectionContext> _readPollQueue = new ConcurrentQueue<IoUringConnectionContext>();
-        private readonly ConcurrentQueue<IoUringConnectionContext> _writePollQueue = new ConcurrentQueue<IoUringConnectionContext>();
-        // TODO: One Dictionary would probably suffice
+        private readonly ConcurrentQueue<ulong> _asyncOperationQueue = new ConcurrentQueue<ulong>();
+        private readonly ConcurrentDictionary<int, object> _asyncOperationStates = new ConcurrentDictionary<int, object>();
         private readonly Dictionary<int, AcceptSocketContext> _acceptSockets = new Dictionary<int, AcceptSocketContext>();
         private readonly Dictionary<int, IoUringConnectionContext> _connections = new Dictionary<int, IoUringConnectionContext>();
         private readonly TransportThreadContext _threadContext;
         private readonly MemoryPool<byte> _memoryPool = new SlabMemoryPool();
+        private readonly TaskCompletionSource<object> _threadCompletion = new TaskCompletionSource<object>();
+        private volatile bool _disposed;
         private int _eventfd;
         private GCHandle _eventfdBytes;
         private GCHandle _eventfdIoVecHandle;
@@ -58,10 +63,10 @@ namespace IoUring.Transport.Internals
         {
             _ring = new Ring(RingSize);
             SetupEventFd();
-            _threadContext = new TransportThreadContext(options, _readPollQueue, _writePollQueue, _memoryPool, _eventfd);
+            _threadContext = new TransportThreadContext(options, _memoryPool, _eventfd, _asyncOperationQueue);
         }
 
-        public unsafe ValueTask<ConnectionContext> Connect(IPEndPoint endpoint)
+        public ValueTask<ConnectionContext> Connect(IPEndPoint endpoint)
         {
             var domain = endpoint.AddressFamily == AddressFamily.InterNetwork ? AF_INET : AF_INET6;
             LinuxSocket s = socket(domain, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, IPPROTO_TCP);
@@ -77,7 +82,8 @@ namespace IoUring.Transport.Internals
             endpoint.ToSockAddr(context.Addr, out var addrLength);
             context.AddrLen = addrLength;
 
-            _clientSocketQueue.Enqueue(context);
+            _asyncOperationStates[s] = context;
+            _asyncOperationQueue.Enqueue(Mask(s, ConnectMask));
             _threadContext.Notify();
 
             return new ValueTask<ConnectionContext>(tcs.Task);
@@ -86,7 +92,7 @@ namespace IoUring.Transport.Internals
         public void Bind(IPEndPoint endpoint, ChannelWriter<ConnectionContext> acceptQueue)
         {
             var domain = endpoint.AddressFamily == AddressFamily.InterNetwork ? AF_INET : AF_INET6;
-            LinuxSocket s = socket(domain, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, IPPROTO_TCP);
+            LinuxSocket s = socket(domain, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP);
             s.SetOption(SOL_SOCKET, SO_REUSEADDR, 1);
             s.SetOption(SOL_SOCKET, SO_REUSEPORT, 1);
             s.Bind(endpoint);
@@ -94,7 +100,8 @@ namespace IoUring.Transport.Internals
 
             var context = new AcceptSocketContext(s, endpoint, acceptQueue);
 
-            _acceptSocketQueue.Enqueue(context);
+            _asyncOperationStates[s] = context;
+            _asyncOperationQueue.Enqueue(Mask(s, AcceptMask));
             _threadContext.Notify();
         }
 
@@ -108,33 +115,42 @@ namespace IoUring.Transport.Internals
         {
             ReadEventFd();
 
-            while (true)
+            while (!_disposed)
             {
-                while (_acceptSocketQueue.TryDequeue(out var context))
+                while (_asyncOperationQueue.TryDequeue(out var operation))
                 {
-                    _acceptSockets[context.Socket] = context;
-                    PollAccept(context);
-                }
-                while (_clientSocketQueue.TryDequeue(out var context))
-                {
-                    _connections[context.Socket] = context;
-                    Connect(context);
-                }
-                while (_readPollQueue.TryDequeue(out var context))
-                {
-                    PollRead(context);
-                }
-                while (_writePollQueue.TryDequeue(out var context))
-                {
-                    PollWrite(context);
-                }
+                    var socket = (int) operation;
+                    var operationType = (CompletionType) (operation >> 32);
 
+                    switch (operationType)
+                    {
+                        case CompletionType.Read when _connections.TryGetValue(socket, out var context):
+                            Read(context);
+                            break;
+                        case CompletionType.Write when _connections.TryGetValue(socket, out var context):
+                            Write(context);
+                            break;
+                        case CompletionType.Accept when _asyncOperationStates.Remove(socket, out var context):
+                            var acceptSocketContext = (AcceptSocketContext) context;
+                            _acceptSockets[socket] = acceptSocketContext;
+                            Accept(acceptSocketContext);
+                            break;
+                        case CompletionType.Connect when _asyncOperationStates.Remove(socket, out var context):
+                            var outboundConnectionContext = (OutboundConnectionContext) context;
+                            _connections[socket] = outboundConnectionContext;
+                            Connect(outboundConnectionContext);
+                            break;
+                    }
+                }
                 Submit();
                 Complete();
             }
+
+            _ring.Dispose();
+            _threadCompletion.TrySetResult(null);
         }
 
-        private unsafe void SetupEventFd()
+        private void SetupEventFd()
         {
             int res = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
             if (res == -1) throw new ErrnoException(errno);
@@ -154,41 +170,26 @@ namespace IoUring.Transport.Internals
             _eventfdIoVec = (iovec*) _eventfdIoVecHandle.AddrOfPinnedObject();
         }
 
-        private unsafe void ReadEventFd()
+        private void ReadEventFd()
         {
             Debug.WriteLine("Adding read on eventfd");
             _ring.PreparePollAdd(_eventfd, (ushort)POLLIN, options: SubmissionOption.Link);
             _ring.PrepareReadV(_eventfd, _eventfdIoVec, 1, userData: EventFdPollMask);
         }
 
-        private void PollAccept(AcceptSocketContext acceptSocket)
+        private void Accept(AcceptSocketContext context)
         {
-            var socket = acceptSocket.Socket;
-            Debug.WriteLine($"Adding accept on {(int)socket}");
-            _ring.PreparePollAdd(socket, (ushort) POLLIN, Mask(socket, AcceptPollMask));
+            var socket = context.Socket;
+            _ring.PrepareAccept(socket, (sockaddr*) context.Addr, context.AddrLen, SOCK_NONBLOCK | SOCK_CLOEXEC, Mask(socket, AcceptMask));
         }
 
-        private unsafe void Connect(OutboundConnectionContext context)
+        private void Connect(OutboundConnectionContext context)
         {
             var socket = context.Socket;
             _ring.PrepareConnect(socket, (sockaddr*) context.Addr, context.AddrLen, Mask(socket, ConnectMask));
         }
 
-        private void PollRead(IoUringConnectionContext context)
-        {
-            var socket = context.Socket;
-            Debug.WriteLine($"Adding read poll on {(int)socket}");
-            _ring.PreparePollAdd(socket, (ushort) POLLIN, Mask(socket, ReadPollMask));
-        }
-
-        private void PollWrite(IoUringConnectionContext context)
-        {
-            var socket = context.Socket;
-            Debug.WriteLine($"Adding write poll on {(int)socket}");
-            _ring.PreparePollAdd(socket, (ushort) POLLOUT, Mask(socket, WritePollMask));
-        }
-
-        private unsafe void Read(IoUringConnectionContext context)
+        private void Read(IoUringConnectionContext context)
         {
             var maxBufferSize = _memoryPool.MaxBufferSize;
 
@@ -206,10 +207,11 @@ namespace IoUring.Transport.Internals
 
             var socket = context.Socket;
             Debug.WriteLine($"Adding read on {(int)socket}");
+            _ring.PreparePollAdd(socket, (ushort) POLLIN, options: SubmissionOption.Link);
             _ring.PrepareReadV(socket, readVecs, 1, 0, 0, Mask(socket, ReadMask));
         }
 
-        private unsafe void Write(IoUringConnectionContext context)
+        private void Write(IoUringConnectionContext context)
         {
             var result = context.ReadResult.Result;
 
@@ -241,6 +243,7 @@ namespace IoUring.Transport.Internals
 
             context.LastWrite = buffer;
             Debug.WriteLine($"Adding write on {(int)socket}");
+            _ring.PreparePollAdd(socket, (ushort) POLLOUT, options: SubmissionOption.Link);
             _ring.PrepareWriteV(socket, writeVecs ,ctr, 0 ,0, Mask(socket, WriteMask));
         }
 
@@ -250,7 +253,6 @@ namespace IoUring.Transport.Internals
             if (_threadContext.BlockingMode)
             {
                 minComplete = 1;
-                IoUringTransportEventSource.Log.ReportBlockingEnter();
             }
 
             uint operationsSubmitted = 0;
@@ -265,8 +267,6 @@ namespace IoUring.Transport.Internals
                 }
             } while (result != SubmitResult.SubmittedSuccessfully);
             _threadContext.BlockingMode = false;
-
-            IoUringTransportEventSource.Log.ReportSubmissionsPerEnter((int) operationsSubmitted);
 
             if (operationsSubmitted == 0)
             {
@@ -284,41 +284,23 @@ namespace IoUring.Transport.Internals
             while (_ring.TryRead(out Completion c))
             {
                 completions++;
-                var socket = (int)c.userData;
-                if ((c.userData & EventFdPollMask) == EventFdPollMask)
-                {
-                    CompleteEventFdPoll();
-                    continue;
-                }
-                if ((c.userData & AcceptPollMask) == AcceptPollMask)
-                {
-                    CompleteAcceptPoll(_acceptSockets[socket]);
-                    continue;
-                }
-                if (!_connections.TryGetValue(socket, out var context)) continue;
-                if ((c.userData & ReadPollMask) == ReadPollMask)
-                {
-                    CompleteReadPoll(context, c.result);
-                }
-                else if ((c.userData & WritePollMask) == WritePollMask)
-                {
-                    CompleteWritePoll(context, c.result);
-                }
-                else if ((c.userData & ReadMask) == ReadMask)
-                {
-                    CompleteRead(context, c.result);
-                }
-                else if ((c.userData & WriteMask) == WriteMask)
-                {
-                    CompleteWrite(context, c.result);
-                }
-                else if ((c.userData & ConnectMask) == ConnectMask)
-                {
-                    CompleteConnect((OutboundConnectionContext) context, c.result);
-                }
-            }
+                var socket = (int) c.userData;
+                var completionTyp = (CompletionType) (c.userData >> 32);
 
-            IoUringTransportEventSource.Log.ReportCompletionsPerEnter(completions);
+                if (completionTyp == CompletionType.EventFdPoll) 
+                    CompleteEventFdPoll();
+                else if (completionTyp == CompletionType.Accept) 
+                    CompleteAccept(_acceptSockets[socket], c.result);
+
+                if (!_connections.TryGetValue(socket, out var context)) continue;
+
+                if (completionTyp == CompletionType.Read) 
+                    CompleteRead(context, c.result);
+                else if (completionTyp == CompletionType.Write) 
+                    CompleteWrite(context, c.result);
+                else if (completionTyp == CompletionType.Connect) 
+                    CompleteConnect((OutboundConnectionContext) context, c.result);
+            }
 
             if (completions == 0)
             {
@@ -343,28 +325,38 @@ namespace IoUring.Transport.Internals
             ReadEventFd();
         }
 
-        private void CompleteAcceptPoll(AcceptSocketContext context)
+        private void CompleteAccept(AcceptSocketContext acceptContext, int result)
         {
-            LinuxSocket socket;
-
-            while ((socket = context.Socket.Accept(out var clientEndpoint)) != -1)
+            if (result < 0)
             {
-                if (_threadContext.Options.TcpNoDelay)
+                var err = -result;
+                if (err == EAGAIN || err == EINTR || err == EMFILE)
                 {
-                    socket.SetOption(SOL_TCP, TCP_NODELAY, 1);
+                    Debug.WriteLine("accepted for nothing");
+
+                    Accept(acceptContext);
+                    return;
                 }
 
-                Debug.WriteLine($"Accepted {(int)socket}");
-                var connectionContext = new InboundConnectionContext(socket, context.EndPoint, clientEndpoint, _threadContext);
-
-                _connections[socket] = connectionContext;
-                context.AcceptQueue.TryWrite(connectionContext);
-
-                PollRead(connectionContext);
-                ReadFromApp(connectionContext);
+                throw new ErrnoException(err);
             }
 
-            PollAccept(context);
+            LinuxSocket socket = result;
+            if (_threadContext.Options.TcpNoDelay)
+            {
+                socket.SetOption(SOL_TCP, TCP_NODELAY, 1);
+            }
+
+            Debug.WriteLine($"Accepted {(int) socket}");
+            var remoteEndpoint = IPEndPointFormatter.AddrToIpEndPoint(acceptContext.Addr);
+            var context = new InboundConnectionContext(socket, acceptContext.EndPoint, remoteEndpoint, _threadContext);
+
+            _connections[socket] = context;
+            acceptContext.AcceptQueue.TryWrite(context);
+
+            Accept(acceptContext);
+            Read(context);
+            ReadFromApp(context);
         }
 
         private void CompleteConnect(OutboundConnectionContext context, int result)
@@ -385,46 +377,10 @@ namespace IoUring.Transport.Internals
             context.LocalEndPoint = context.Socket.GetLocalAddress();
             completion.TrySetResult(context);
 
-            PollRead(context);
+            Read(context);
             ReadFromApp(context);
 
             context.ConnectCompletion = null; // no need to hold on to this
-        }
-
-        private void CompleteReadPoll(IoUringConnectionContext context, int result)
-        {
-            if (result < 0)
-            {
-                if (-result != EAGAIN || -result != EINTR)
-                {
-                    throw new ErrnoException(-result);
-                }
-
-                Debug.WriteLine("Polled read for nothing");
-                PollRead(context);
-                return;
-            }
-
-            Debug.WriteLine($"Completed read poll on {(int)context.Socket}");
-            Read(context);
-        }
-
-        private void CompleteWritePoll(IoUringConnectionContext context, int result)
-        {
-            if (result < 0)
-            {
-                if (-result != EAGAIN || -result != EINTR)
-                {
-                    throw new ErrnoException(-result);
-                }
-
-                Debug.WriteLine("Polled write for nothing");
-                PollWrite(context);
-                return;
-            }
-
-            Debug.WriteLine($"Completed write poll on {(int)context.Socket}");
-            Write(context);
         }
 
         private void CompleteRead(IoUringConnectionContext context, int result)
@@ -462,13 +418,11 @@ namespace IoUring.Transport.Internals
             {
                 // likely
                 Debug.WriteLine($"Flushed read from {(int)context.Socket} synchronously");
-                IoUringTransportEventSource.Log.ReportSyncFlushAsync();
                 context.FlushedToAppSynchronously();
-                PollRead(context);
+                Read(context);
             }
             else
             {
-                IoUringTransportEventSource.Log.ReportAsyncFlushAsync();
                 flushResult.GetAwaiter().UnsafeOnCompleted(context.OnFlushedToApp);
             }
         }
@@ -497,7 +451,7 @@ namespace IoUring.Transport.Internals
                 }
                 else if (result < 0)
                 {
-                    if (-result == ECONNRESET)
+                    if (-result == ECONNRESET || -result == EPIPE)
                     {
                         context.DisposeAsync();
                     } 
@@ -526,22 +480,26 @@ namespace IoUring.Transport.Internals
             if (readResult.IsCompleted)
             {
                 Debug.WriteLine($"Read from app for {(int)context.Socket} synchronously");
-                IoUringTransportEventSource.Log.ReportSyncReadAsync();
                 context.ReadFromAppSynchronously();
-                PollWrite(context);
+                Write(context);
             }
             else
             {
                 // likely
-                IoUringTransportEventSource.Log.ReportAsyncReadAsync();
                 readResult.GetAwaiter().UnsafeOnCompleted(context.OnReadFromApp);
             }
         }
 
-        private static ulong Mask(int socket, ulong mask)
+        public static ulong Mask(int socket, ulong mask)
         {
             var socketUl = (ulong)socket;
             return socketUl | mask;
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            _disposed = true;
+            return new ValueTask(_threadCompletion.Task);
         }
     }
 }

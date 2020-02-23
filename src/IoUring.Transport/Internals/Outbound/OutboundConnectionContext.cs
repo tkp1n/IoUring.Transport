@@ -1,5 +1,8 @@
 using System.Net;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Connections.Features;
+using Tmds.Linux;
 
 namespace IoUring.Transport.Internals.Outbound
 {
@@ -15,5 +18,9 @@ namespace IoUring.Transport.Internals.Outbound
 
         // We claim to have inherent keep-alive so the client doesn't kill the connection when it hasn't seen ping frames.
         public bool HasInherentKeepAlive => true;
+
+        public socklen_t AddrLen { get; set; }
+
+        public TaskCompletionSource<ConnectionContext> ConnectCompletion { get; set; }
     }
 }

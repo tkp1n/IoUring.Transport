@@ -27,6 +27,9 @@ namespace IoUring.Transport.Internals
         private readonly iovec* _iovec;
         private GCHandle _iovecHandle;
 
+        private readonly sockaddr_storage* _addr;
+        private GCHandle _addrHandle;
+
         protected IoUringConnectionContext(LinuxSocket socket, EndPoint local, EndPoint remote, TransportThreadContext threadContext)
         {
             Socket = socket;
@@ -50,9 +53,14 @@ namespace IoUring.Transport.Internals
             _onReadFromApp = ReadFromAppAsynchronously;
 
             iovec[] vecs = new iovec[ReadIOVecCount + WriteIOVecCount];
-            var handle = GCHandle.Alloc(vecs, GCHandleType.Pinned);
-            _iovec = (iovec*) handle.AddrOfPinnedObject();
-            _iovecHandle = handle;
+            var vecsHandle = GCHandle.Alloc(vecs, GCHandleType.Pinned);
+            _iovec = (iovec*) vecsHandle.AddrOfPinnedObject();
+            _iovecHandle = vecsHandle;
+
+            sockaddr_storage addr = default;
+            var addrHandle = GCHandle.Alloc(addr, GCHandleType.Pinned);
+            _addr = (sockaddr_storage*) addrHandle.AddrOfPinnedObject();
+            _addrHandle = addrHandle;
         }
 
         public LinuxSocket Socket { get; }
@@ -60,6 +68,8 @@ namespace IoUring.Transport.Internals
 
         public iovec* ReadVecs => _iovec;
         public iovec* WriteVecs => _iovec + ReadIOVecCount;
+
+        public sockaddr_storage* Addr => _addr;
 
         public MemoryHandle[] ReadHandles { get; } = new MemoryHandle[ReadIOVecCount];
         public MemoryHandle[] WriteHandles { get; } = new MemoryHandle[WriteIOVecCount];
@@ -74,7 +84,7 @@ namespace IoUring.Transport.Internals
         public ValueTask<ReadResult> ReadResult { get; set; }
         public Action OnFlushedToApp => _onOnFlushedToApp;
         public Action OnReadFromApp => _onReadFromApp;
-        public TaskCompletionSource<ConnectionContext> ConnectCompletion { get; set; }
+
         private void FlushedToApp(bool async)
         {
             var flushResult = FlushResult;
@@ -103,7 +113,7 @@ namespace IoUring.Transport.Internals
                 Debug.WriteLine($"Read from app for {(int)Socket} asynchronously");
                 _threadContext.WritePollQueue.Enqueue(this);
                 _threadContext.Notify();
-            }            
+            }
         }
 
         private void ReadFromAppAsynchronously() => ReadFromApp(true);
@@ -114,6 +124,9 @@ namespace IoUring.Transport.Internals
             // TODO: close pipes?
             if (_iovecHandle.IsAllocated)
                 _iovecHandle.Free();
+            if (_addrHandle.IsAllocated)
+                _addrHandle.Free();
+
             return base.DisposeAsync();
         }
 

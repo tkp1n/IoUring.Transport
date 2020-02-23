@@ -12,7 +12,7 @@
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\..\src\IoUring\IoUring.csproj" />
+      <PackageReference Include="IoUring" Version="0.1.0-*" />
     </ItemGroup>
 
 </Project>

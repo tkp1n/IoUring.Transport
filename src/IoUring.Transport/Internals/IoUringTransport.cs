@@ -17,6 +17,8 @@ namespace IoUring.Transport.Internals
         {
             Options = (options ?? throw new ArgumentNullException(nameof(options))).Value;
             LoggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
+
+            Limits.SetToMax(Resource.RLIMIT_NOFILE);
         }
 
         public IoUringOptions Options { get; }
@@ -45,9 +47,12 @@ namespace IoUring.Transport.Internals
             return thread;
         }
 
-        public ValueTask DisposeAsync()
+        public async ValueTask DisposeAsync()
         {
-            throw new NotImplementedException();
+            foreach (var transportThread in _transportThreads)
+            {
+                await transportThread.DisposeAsync();
+            }
         }
     }
 }

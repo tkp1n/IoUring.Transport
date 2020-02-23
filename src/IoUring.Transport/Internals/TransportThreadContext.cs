@@ -3,7 +3,6 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
-using IoUring.Transport.Internals.Metrics;
 using static Tmds.Linux.LibC;
 
 namespace IoUring.Transport.Internals
@@ -14,17 +13,17 @@ namespace IoUring.Transport.Internals
         private const int False = 0;
         
         private readonly int _eventFd;
+        private readonly ConcurrentQueue<ulong> _asyncOperationQueue;
         private int _blockingMode;
 
-        public TransportThreadContext(IoUringOptions options, ConcurrentQueue<IoUringConnectionContext> readPollQueue,
-            ConcurrentQueue<IoUringConnectionContext> writePollQueue, MemoryPool<byte> memoryPool, int eventFd)
+        public TransportThreadContext(IoUringOptions options, MemoryPool<byte> memoryPool, int eventFd, ConcurrentQueue<ulong> asyncOperationQueue)
         {
-            ReadPollQueue = readPollQueue;
-            WritePollQueue = writePollQueue;
-            _eventFd = eventFd;
             Options = options;
             MemoryPool = memoryPool;
+            _eventFd = eventFd;
+            _asyncOperationQueue = asyncOperationQueue;
         }
+
 
         public bool BlockingMode
         {
@@ -35,10 +34,6 @@ namespace IoUring.Transport.Internals
         }
 
         public IoUringOptions Options { get; }
-
-        public ConcurrentQueue<IoUringConnectionContext> ReadPollQueue { get; }
-
-        public ConcurrentQueue<IoUringConnectionContext> WritePollQueue { get; }
 
         public MemoryPool<byte> MemoryPool { get; }
 
@@ -57,7 +52,6 @@ namespace IoUring.Transport.Internals
             // The transport thread reported it is (probably still) blocking. We therefore must notify it by writing
             // to the eventfd established for that purpose.
 
-            IoUringTransportEventSource.Log.ReportEventFdWrite();
             Debug.WriteLine("Attempting to unblock thread");
 
             byte* val = stackalloc byte[sizeof(ulong)];
@@ -66,6 +60,18 @@ namespace IoUring.Transport.Internals
             {
                 throw new ErrnoException(errno);
             }
+        }
+
+        public void ScheduleAsyncRead(int socket)
+        {
+            _asyncOperationQueue.Enqueue(TransportThread.Mask(socket, TransportThread.ReadMask));
+            Notify();
+        }
+
+        public void ScheduleAsyncWrite(int socket)
+        {
+            _asyncOperationQueue.Enqueue(TransportThread.Mask(socket, TransportThread.WriteMask));
+            Notify();
         }
     }
 }

@@ -20,19 +20,6 @@ namespace IoUring.Transport.Internals
             if (rv != 0) throw new ErrnoException(errno);
         }
 
-        public unsafe bool TryConnectNonBlocking(IPEndPoint endPoint)
-        {
-            sockaddr_storage addr;
-            endPoint.ToSockAddr(&addr, out var length);
-            var rv = connect(_fd, (sockaddr*) &addr, length);
-            if (rv == 0) return true;
-
-            var result = errno;
-            if (result == EINPROGRESS) return false;
-            
-            throw new ErrnoException(result);
-        }
-
         public unsafe void Bind(IPEndPoint endPoint)
         {
             sockaddr_storage addr;

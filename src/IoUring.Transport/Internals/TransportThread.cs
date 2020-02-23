@@ -18,7 +18,7 @@ using static Tmds.Linux.LibC;
 
 namespace IoUring.Transport.Internals
 {
-    internal sealed class TransportThread
+    internal sealed unsafe class TransportThread
     {
         private const int RingSize = 4096;
         private const int ListenBacklog = 128;
@@ -46,7 +46,8 @@ namespace IoUring.Transport.Internals
         private readonly MemoryPool<byte> _memoryPool = new SlabMemoryPool();
         private int _eventfd;
         private GCHandle _eventfdBytes;
-        private GCHandle _eventfdIoVec;
+        private GCHandle _eventfdIoVecHandle;
+        private iovec* _eventfdIoVec;
 
         // variables to prevent useless spinning in the event loop
         private int _loopsWithoutSubmission;
@@ -148,7 +149,7 @@ namespace IoUring.Transport.Internals
 
         private unsafe void SetupEventFd()
         {
-            int res = eventfd(0, EFD_SEMAPHORE);
+            int res = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
             if (res == -1) throw new ErrnoException(errno);
             _eventfd = res;
 
@@ -162,13 +163,15 @@ namespace IoUring.Transport.Internals
                 iov_base = (void*) _eventfdBytes.AddrOfPinnedObject(),
                 iov_len = bytes.Length
             };
-            _eventfdIoVec = GCHandle.Alloc(eventfdIoVec, GCHandleType.Pinned);
+            _eventfdIoVecHandle = GCHandle.Alloc(eventfdIoVec, GCHandleType.Pinned);
+            _eventfdIoVec = (iovec*) _eventfdIoVecHandle.AddrOfPinnedObject();
         }
 
         private unsafe void ReadEventFd()
         {
             Debug.WriteLine("Adding read on eventfd");
-            _ring.PrepareReadV(_eventfd, (iovec*) _eventfdIoVec.AddrOfPinnedObject(), 1, userData: EventFdPollMask);
+            _ring.PreparePollAdd(_eventfd, (ushort)POLLIN, options: SubmissionOption.Link);
+            _ring.PrepareReadV(_eventfd, _eventfdIoVec, 1, userData: EventFdPollMask);
         }
 
         private void PollAccept(AcceptSocketContext acceptSocket)

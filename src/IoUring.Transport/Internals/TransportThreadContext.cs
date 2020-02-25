@@ -24,21 +24,17 @@ namespace IoUring.Transport.Internals
             _asyncOperationQueue = asyncOperationQueue;
         }
 
-
-        public bool BlockingMode
-        {
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get => Volatile.Read(ref _blockingMode) == True;
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            set => Volatile.Write(ref _blockingMode, value ? True : False);
-        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SetBlockingMode(bool blocking) 
+            => Volatile.Write(ref _blockingMode, blocking ? True : False);
 
         public IoUringOptions Options { get; }
 
         public MemoryPool<byte> MemoryPool { get; }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool ShouldUnblock() => Interlocked.CompareExchange(ref _blockingMode, False, True) == True;
+        private bool ShouldUnblock() 
+            => Interlocked.CompareExchange(ref _blockingMode, False, True) == True;
 
         public unsafe void Notify()
         {
@@ -56,10 +52,11 @@ namespace IoUring.Transport.Internals
 
             byte* val = stackalloc byte[sizeof(ulong)];
             Unsafe.WriteUnaligned(val, 1UL);
-            if (write(_eventFd, val, sizeof(ulong)) == -1)
+            int rv;
+            do
             {
-                throw new ErrnoException(errno);
-            }
+                rv = (int) write(_eventFd, val, sizeof(ulong));
+            } while (rv == -1 && errno == EINTR);
         }
 
         public void ScheduleAsyncRead(int socket)

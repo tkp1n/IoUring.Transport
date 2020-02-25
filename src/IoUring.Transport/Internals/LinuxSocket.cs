@@ -1,5 +1,4 @@
 using System.Net;
-using Microsoft.AspNetCore.Routing.Matching;
 using Tmds.Linux;
 using static Tmds.Linux.LibC;
 
@@ -63,7 +62,7 @@ namespace IoUring.Transport.Internals
         }
 
         public void Close() => close(_fd);
-        
+
         public static implicit operator LinuxSocket(int v) => new LinuxSocket(v);
         public static implicit operator int(LinuxSocket s) => s._fd;
     }

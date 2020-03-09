@@ -2,9 +2,10 @@
 
     <PropertyGroup>
         <TargetFramework>netcoreapp3.1</TargetFramework>
-        <OutputType>Library</OutputType>
-        <LangVersion>latest</LangVersion>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <LangVersion>latest</LangVersion>
+        <OutputType>Library</OutputType>
+        <IsPackable>true</IsPackable>
 
         <VersionPrefix>0.1.0</VersionPrefix>
 

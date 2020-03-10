@@ -406,11 +406,16 @@ namespace IoUring.Transport.Internals
         {
             try
             {
-                if (result > 0)
+                var lastWrite = context.LastWrite;
+                if (result >= 0)
                 {
-                    var lastWrite = context.LastWrite;
                     SequencePosition end;
-                    if (lastWrite.Length == result)
+                    if (result == 0)
+                    {
+                        Debug.WriteLine($"Wrote {result} bytes to {(int)context.Socket}");
+                        end = lastWrite.Start;
+                    }
+                    else if (lastWrite.Length == result)
                     {
                         Debug.WriteLine($"Wrote all {result} bytes to {(int)context.Socket}");
                         end = lastWrite.End;
@@ -430,12 +435,16 @@ namespace IoUring.Transport.Internals
                     {
                         context.DisposeAsync();
                     } 
-                    else if (-result != EAGAIN && -result != EWOULDBLOCK && -result != EINTR)
+                    else if (-result == EAGAIN || -result == EWOULDBLOCK || -result == EINTR)
+                    {
+                        Debug.WriteLine("Wrote for nothing");
+                        context.Output.AdvanceTo(lastWrite.Start);
+                        ReadFromApp(context);
+                    }
+                    else
                     {
                         throw new ErrnoException(-result);
                     }
-
-                    Debug.WriteLine("Wrote for nothing");
                 }
             }
             finally

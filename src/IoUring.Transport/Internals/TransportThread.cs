@@ -373,7 +373,7 @@ namespace IoUring.Transport.Internals
                 {
                     context.DisposeAsync();
                 } 
-                else if (-result != EAGAIN || -result != EWOULDBLOCK || -result != EINTR)
+                else if (-result != EAGAIN && -result != EWOULDBLOCK && -result != EINTR)
                 {
                     throw new ErrnoException(-result);
                 }

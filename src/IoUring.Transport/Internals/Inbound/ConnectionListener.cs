@@ -1,4 +1,5 @@
 using System;
+using System.IO.Pipelines;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
@@ -11,20 +12,22 @@ namespace IoUring.Transport.Internals.Inbound
     internal class ConnectionListener : IConnectionListener
     {
         private readonly IoUringTransport _transport;
+        private readonly IoUringOptions _options;
 
         private ChannelReader<ConnectionContext> _acceptQueue;
 
-        private ConnectionListener(EndPoint endpoint, IoUringTransport transport)
+        private ConnectionListener(EndPoint endpoint, IoUringTransport transport, IoUringOptions options)
         {
             EndPoint = endpoint;
             _transport = transport;
+            _options = options;
         }
 
         public EndPoint EndPoint { get; }
 
-        public static ValueTask<IConnectionListener> Create(EndPoint endpoint, IoUringTransport transport)
+        public static ValueTask<IConnectionListener> Create(EndPoint endpoint, IoUringTransport transport, IoUringOptions options)
         {
-            var listener = new ConnectionListener(endpoint, transport);
+            var listener = new ConnectionListener(endpoint, transport, options);
             listener.Bind();
             return new ValueTask<IConnectionListener>(listener);
         }
@@ -34,7 +37,12 @@ namespace IoUring.Transport.Internals.Inbound
             if (!(EndPoint is IPEndPoint)) throw new NotSupportedException();
             if (EndPoint.AddressFamily != AddressFamily.InterNetwork && EndPoint.AddressFamily != AddressFamily.InterNetworkV6) throw new NotSupportedException();
 
-            var acceptQueue = Channel.CreateUnbounded<ConnectionContext>();
+            var acceptQueue = Channel.CreateUnbounded<ConnectionContext>(new UnboundedChannelOptions
+            {
+                SingleReader = false,
+                SingleWriter = false,
+                AllowSynchronousContinuations = _options.ApplicationSchedulingMode == PipeScheduler.Inline
+            });
             _acceptQueue = acceptQueue.Reader;
 
             var threads = _transport.TransportThreads;

@@ -404,55 +404,50 @@ namespace IoUring.Transport.Internals
 
         private void CompleteWrite(IoUringConnectionContext context, int result)
         {
-            try
+            var writeHandles = context.WriteHandles;
+            for (int i = 0; i < writeHandles.Length; i++)
             {
-                var lastWrite = context.LastWrite;
-                if (result >= 0)
-                {
-                    SequencePosition end;
-                    if (result == 0)
-                    {
-                        Debug.WriteLine($"Wrote {result} bytes to {(int)context.Socket}");
-                        end = lastWrite.Start;
-                    }
-                    else if (lastWrite.Length == result)
-                    {
-                        Debug.WriteLine($"Wrote all {result} bytes to {(int)context.Socket}");
-                        end = lastWrite.End;
-                    }
-                    else
-                    {
-                        Debug.WriteLine($"Wrote some {result} bytes to {(int)context.Socket}");
-                        end = lastWrite.GetPosition(result);
-                    }
+                writeHandles[i].Dispose();
+            }
 
-                    context.Output.AdvanceTo(end);
+            var lastWrite = context.LastWrite;
+            if (result >= 0)
+            {
+                SequencePosition end;
+                if (result == 0)
+                {
+                    Debug.WriteLine($"Wrote {result} bytes to {(int)context.Socket}");
+                    end = lastWrite.Start;
+                }
+                else if (lastWrite.Length == result)
+                {
+                    Debug.WriteLine($"Wrote all {result} bytes to {(int)context.Socket}");
+                    end = lastWrite.End;
+                }
+                else
+                {
+                    Debug.WriteLine($"Wrote some {result} bytes to {(int)context.Socket}");
+                    end = lastWrite.GetPosition(result);
+                }
+
+                context.Output.AdvanceTo(end);
+                ReadFromApp(context);
+            }
+            else if (result < 0)
+            {
+                if (-result == ECONNRESET || -result == EPIPE)
+                {
+                    context.DisposeAsync();
+                } 
+                else if (-result == EAGAIN || -result == EWOULDBLOCK || -result == EINTR)
+                {
+                    Debug.WriteLine("Wrote for nothing");
+                    context.Output.AdvanceTo(lastWrite.Start);
                     ReadFromApp(context);
                 }
-                else if (result < 0)
+                else
                 {
-                    if (-result == ECONNRESET || -result == EPIPE)
-                    {
-                        context.DisposeAsync();
-                    } 
-                    else if (-result == EAGAIN || -result == EWOULDBLOCK || -result == EINTR)
-                    {
-                        Debug.WriteLine("Wrote for nothing");
-                        context.Output.AdvanceTo(lastWrite.Start);
-                        ReadFromApp(context);
-                    }
-                    else
-                    {
-                        throw new ErrnoException(-result);
-                    }
-                }
-            }
-            finally
-            {
-                var writeHandles = context.WriteHandles;
-                for (int i = 0; i < writeHandles.Length; i++)
-                {
-                    writeHandles[i].Dispose();
+                    throw new ErrnoException(-result);
                 }
             }
         }

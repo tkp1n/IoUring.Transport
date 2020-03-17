@@ -22,11 +22,14 @@ namespace IoUring.Transport.Internals
     {
         private const int RingSize = 4096;
         private const int ListenBacklog = 128;
-        public const ulong ReadMask =         (ulong) OperationType.Read << 32;
-        public const ulong WriteMask =        (ulong) OperationType.Write << 32;
-        private const ulong EventFdPollMask = (ulong) OperationType.EventFdPoll << 32;
-        private const ulong ConnectMask =     (ulong) OperationType.Connect << 32;
-        private const ulong AcceptMask =      (ulong) OperationType.Accept << 32;
+        private const ulong ReadMask =            (ulong) OperationType.Read << 32;
+        public const ulong ReadPollMask =         (ulong) OperationType.ReadPoll << 32;
+        private const ulong WriteMask =           (ulong) OperationType.Write << 32;
+        public const ulong WritePollMask =        (ulong) OperationType.WritePoll << 32;
+        private const ulong EventFdReadPollMask = (ulong) OperationType.EventFdReadPoll << 32;
+        private const ulong EventFdReadMask =     (ulong) OperationType.EventFdRead << 32;
+        private const ulong ConnectMask =         (ulong) OperationType.Connect << 32;
+        private const ulong AcceptMask =          (ulong) OperationType.Accept << 32;
 
         private static int _threadId;
 
@@ -116,7 +119,7 @@ namespace IoUring.Transport.Internals
 
         private void Loop()
         {
-            ReadEventFd();
+            ReadPollEventFd();
 
             while (!_disposed)
             {
@@ -138,11 +141,11 @@ namespace IoUring.Transport.Internals
 
                 switch (operationType)
                 {
-                    case OperationType.Read when _connections.TryGetValue(socket, out var context):
-                        Read(context);
+                    case OperationType.ReadPoll when _connections.TryGetValue(socket, out var context):
+                        ReadPoll(context);
                         break;
-                    case OperationType.Write when _connections.TryGetValue(socket, out var context):
-                        Write(context);
+                    case OperationType.WritePoll when _connections.TryGetValue(socket, out var context):
+                        WritePoll(context);
                         break;
                     case OperationType.Accept when _asyncOperationStates.Remove(socket, out var context):
                         AddAndAccept(socket, context);
@@ -154,11 +157,18 @@ namespace IoUring.Transport.Internals
             }
         }
 
+        private void ReadPollEventFd()
+        {
+            Debug.WriteLine("Adding poll on eventfd");
+            int fd = _eventfd;
+            _ring.PreparePollAdd(fd, (ushort)POLLIN, Mask(fd, EventFdReadPollMask));
+        }
+
         private void ReadEventFd()
         {
             Debug.WriteLine("Adding read on eventfd");
-            _ring.PreparePollAdd(_eventfd, (ushort)POLLIN, options: SubmissionOption.Link);
-            _ring.PrepareReadV(_eventfd, _eventfdIoVec, 1, userData: EventFdPollMask);
+            int fd = _eventfd;
+            _ring.PrepareReadV(fd, _eventfdIoVec, 1, userData: Mask(fd, EventFdReadMask));
         }
 
         private void AddAndAccept(int socket, object context)
@@ -189,6 +199,12 @@ namespace IoUring.Transport.Internals
             _ring.PrepareConnect(socket, (sockaddr*) context.Addr, context.AddrLen, Mask(socket, ConnectMask));
         }
 
+        private void ReadPoll(IoUringConnectionContext context)
+        {
+            var socket = context.Socket;
+            _ring.PreparePollAdd(socket, (ushort) POLLIN, Mask(socket, ReadPollMask));
+        }
+
         private void Read(IoUringConnectionContext context)
         {
             var writer = context.Input;
@@ -205,8 +221,13 @@ namespace IoUring.Transport.Internals
 
             var socket = context.Socket;
             Debug.WriteLine($"Adding read on {(int)socket}");
-            _ring.PreparePollAdd(socket, (ushort) POLLIN, options: SubmissionOption.Link);
             _ring.PrepareReadV(socket, readVecs, 1, 0, 0, Mask(socket, ReadMask));
+        }
+
+        private void WritePoll(IoUringConnectionContext context)
+        {
+            var socket = context.Socket;
+            _ring.PreparePollAdd(socket, (ushort) POLLOUT, Mask(socket, WritePollMask));
         }
 
         private void Write(IoUringConnectionContext context)
@@ -240,7 +261,6 @@ namespace IoUring.Transport.Internals
 
             context.LastWrite = buffer;
             Debug.WriteLine($"Adding write on {(int)socket}");
-            _ring.PreparePollAdd(socket, (ushort) POLLOUT, options: SubmissionOption.Link);
             _ring.PrepareWriteV(socket, writeVecs ,ctr, 0 ,0, Mask(socket, WriteMask));
         }
 
@@ -270,8 +290,11 @@ namespace IoUring.Transport.Internals
 
                 switch (operationType)
                 {
-                    case OperationType.EventFdPoll:
-                        CompleteEventFdPoll();
+                    case OperationType.EventFdReadPoll:
+                        CompleteEventFdReadPoll(c.result);
+                        break;
+                    case OperationType.EventFdRead:
+                        CompleteEventFdRead(c.result);
                         break;
                     case OperationType.Accept:
                         CompleteAccept(_acceptSockets[socket], c.result);
@@ -282,8 +305,14 @@ namespace IoUring.Transport.Internals
 
                 switch (operationType)
                 {
+                    case OperationType.ReadPoll:
+                        CompleteReadPoll(context, c.result);
+                        break;
                     case OperationType.Read:
                         CompleteRead(context, c.result);
+                        break;
+                    case OperationType.WritePoll:
+                        CompleteWritePoll(context, c.result);
                         break;
                     case OperationType.Write:
                         CompleteWrite(context, c.result);
@@ -295,10 +324,44 @@ namespace IoUring.Transport.Internals
             }
         }
 
-        private void CompleteEventFdPoll()
+        private void CompleteEventFdReadPoll(int result)
         {
-            Debug.WriteLine("EventFd completed");
+            if (result < 0)
+            {
+                var err = -result;
+                if (err == EAGAIN || err == EINTR)
+                {
+                    Debug.WriteLine("polled eventfd for nothing");
+
+                    ReadPollEventFd();
+                    return;
+                }
+
+                throw new ErrnoException(err);
+            }
+
+            Debug.WriteLine("EventFd poll completed");
             ReadEventFd();
+        }
+
+        private void CompleteEventFdRead(int result)
+        {
+            if (result < 0)
+            {
+                var err = -result;
+                if (err == EAGAIN || err == EINTR)
+                {
+                    Debug.WriteLine("read eventfd for nothing");
+
+                    ReadEventFd();
+                    return;
+                }
+
+                throw new ErrnoException(err);
+            }
+
+            Debug.WriteLine("EventFd read completed");
+            ReadPollEventFd();
         }
 
         private void CompleteAccept(AcceptSocketContext acceptContext, int result)
@@ -331,7 +394,7 @@ namespace IoUring.Transport.Internals
             acceptContext.AcceptQueue.TryWrite(context);
 
             Accept(acceptContext);
-            Read(context);
+            ReadPoll(context);
             ReadFromApp(context);
         }
 
@@ -355,8 +418,26 @@ namespace IoUring.Transport.Internals
             context.LocalEndPoint = context.Socket.GetLocalAddress();
             completion.TrySetResult(context);
 
-            Read(context);
+            ReadPoll(context);
             ReadFromApp(context);
+        }
+
+        private void CompleteReadPoll(IoUringConnectionContext context, int result)
+        {
+            if (result < 0)
+            {
+                if (-result != EAGAIN || -result != EINTR)
+                {
+                    throw new ErrnoException(-result);
+                }
+
+                Debug.WriteLine("Polled read for nothing");
+                ReadPoll(context);
+                return;
+            }
+
+            Debug.WriteLine($"Completed read poll on {(int)context.Socket}");
+            Read(context);
         }
 
         private void CompleteRead(IoUringConnectionContext context, int result)
@@ -372,12 +453,12 @@ namespace IoUring.Transport.Internals
                 if (-result == ECONNRESET)
                 {
                     context.DisposeAsync();
-                } 
+                }
                 else if (-result != EAGAIN && -result != EWOULDBLOCK && -result != EINTR)
                 {
                     throw new ErrnoException(-result);
                 }
-    
+
                 Debug.WriteLine("Read for nothing");
             }
             else
@@ -395,11 +476,29 @@ namespace IoUring.Transport.Internals
                 // likely
                 Debug.WriteLine($"Flushed read from {(int)context.Socket} synchronously");
                 context.FlushedToAppSynchronously();
-                Read(context);
+                ReadPoll(context);
                 return;
             }
 
             flushResult.GetAwaiter().UnsafeOnCompleted(context.OnFlushedToApp);
+        }
+
+        private void CompleteWritePoll(IoUringConnectionContext context, int result)
+        {
+            if (result < 0)
+            {
+                if (-result != EAGAIN || -result != EINTR)
+                {
+                    throw new ErrnoException(-result);
+                }
+
+                Debug.WriteLine("Polled write for nothing");
+                WritePoll(context);
+                return;
+            }
+
+            Debug.WriteLine($"Completed write poll on {(int)context.Socket}");
+            Write(context);
         }
 
         private void CompleteWrite(IoUringConnectionContext context, int result)
@@ -438,7 +537,7 @@ namespace IoUring.Transport.Internals
                 if (-result == ECONNRESET || -result == EPIPE)
                 {
                     context.DisposeAsync();
-                } 
+                }
                 else if (-result == EAGAIN || -result == EWOULDBLOCK || -result == EINTR)
                 {
                     Debug.WriteLine("Wrote for nothing");
@@ -461,7 +560,7 @@ namespace IoUring.Transport.Internals
                 // unlikely
                 Debug.WriteLine($"Read from app for {(int)context.Socket} synchronously");
                 context.ReadFromAppSynchronously();
-                Write(context);
+                WritePoll(context);
                 return;
             }
 

@@ -11,7 +11,7 @@ namespace IoUring.Transport.Internals
     {
         private const int True = 1;
         private const int False = 0;
-        
+
         private readonly int _eventFd;
         private readonly ConcurrentQueue<ulong> _asyncOperationQueue;
         private int _blockingMode;
@@ -61,13 +61,13 @@ namespace IoUring.Transport.Internals
 
         public void ScheduleAsyncRead(int socket)
         {
-            _asyncOperationQueue.Enqueue(TransportThread.Mask(socket, TransportThread.ReadMask));
+            _asyncOperationQueue.Enqueue(TransportThread.Mask(socket, TransportThread.ReadPollMask));
             Notify();
         }
 
         public void ScheduleAsyncWrite(int socket)
         {
-            _asyncOperationQueue.Enqueue(TransportThread.Mask(socket, TransportThread.WriteMask));
+            _asyncOperationQueue.Enqueue(TransportThread.Mask(socket, TransportThread.WritePollMask));
             Notify();
         }
     }

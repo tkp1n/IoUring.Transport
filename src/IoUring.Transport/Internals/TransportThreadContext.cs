@@ -70,5 +70,11 @@ namespace IoUring.Transport.Internals
             _asyncOperationQueue.Enqueue(TransportThread.Mask(socket, TransportThread.WritePollMask));
             Notify();
         }
+
+        public void ScheduleAsyncClose(int socket)
+        {
+            _asyncOperationQueue.Enqueue(TransportThread.Mask(socket, TransportThread.CloseMask));
+            Notify(); // TODO: this is not always required (consider to parametrize whether this method is called on the transport thread)
+        }
     }
 }

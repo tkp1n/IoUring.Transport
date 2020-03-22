@@ -30,6 +30,7 @@ namespace IoUring.Transport.Internals
         private const ulong EventFdReadMask =     (ulong) OperationType.EventFdRead << 32;
         private const ulong ConnectMask =         (ulong) OperationType.Connect << 32;
         private const ulong AcceptMask =          (ulong) OperationType.Accept << 32;
+        public const ulong CloseMask =            (ulong) OperationType.Close << 32;
 
         private static int _threadId;
 
@@ -147,6 +148,9 @@ namespace IoUring.Transport.Internals
                     case OperationType.WritePoll when _connections.TryGetValue(socket, out var context):
                         WritePoll(context);
                         break;
+                    case OperationType.Close when _connections.TryGetValue(socket, out var context):
+                        Close(context);
+                        break;
                     case OperationType.Accept when _asyncOperationStates.Remove(socket, out var context):
                         AddAndAccept(socket, context);
                         break;
@@ -232,16 +236,7 @@ namespace IoUring.Transport.Internals
 
         private void Write(IoUringConnectionContext context)
         {
-            var result = context.ReadResult.Result;
-            var buffer = result.Buffer;
-            var socket = context.Socket;
-            if ((buffer.IsEmpty && result.IsCompleted) || result.IsCanceled)
-            {
-                context.DisposeAsync();
-                _connections.Remove(socket);
-                socket.Close();
-                return;
-            }
+            var buffer = context.ReadResult;
 
             var writeHandles = context.WriteHandles;
             var writeVecs = context.WriteVecs;
@@ -256,12 +251,22 @@ namespace IoUring.Transport.Internals
                 writeHandles[ctr] = handle;
 
                 ctr++;
-                if (ctr == IoUringConnectionContext.WriteIOVecCount) break;
+                if (ctr == writeHandles.Length) break;
             }
 
             context.LastWrite = buffer;
+            var socket = context.Socket; 
             Debug.WriteLine($"Adding write on {(int)socket}");
             _ring.PrepareWriteV(socket, writeVecs ,ctr, 0 ,0, Mask(socket, WriteMask));
+        }
+
+        private void Close(IoUringConnectionContext context)
+        {
+            int socket = context.Socket;
+            close(socket); // TODO: replace with close via io_uring in 5.6
+
+            _connections.Remove(socket);
+            context.NotifyClosed();
         }
 
         private void Submit()
@@ -424,89 +429,108 @@ namespace IoUring.Transport.Internals
 
         private void CompleteReadPoll(IoUringConnectionContext context, int result)
         {
-            if (result < 0)
+            if (result >= 0)
             {
-                if (-result != EAGAIN || -result != EINTR)
+                Debug.WriteLine($"Completed read poll on {(int)context.Socket}");
+                Read(context);
+            } 
+            else
+            {
+                var err = -result;
+                if (err == EAGAIN || err == EWOULDBLOCK || err == EINTR)
                 {
-                    throw new ErrnoException(-result);
+                    Debug.WriteLine("Polled read for nothing");
+                    ReadPoll(context);
                 }
-
-                Debug.WriteLine("Polled read for nothing");
-                ReadPoll(context);
-                return;
+                else
+                {
+                    context.CompleteInput(new ErrnoException(err));
+                }
             }
-
-            Debug.WriteLine($"Completed read poll on {(int)context.Socket}");
-            Read(context);
         }
 
         private void CompleteRead(IoUringConnectionContext context, int result)
         {
+            foreach (var readHandle in context.ReadHandles)
+            {
+                readHandle.Dispose();
+            }
+
             if (result > 0)
             {
                 Debug.WriteLine($"Read {result} bytes from {(int)context.Socket}");
                 context.Input.Advance(result);
                 FlushRead(context);
+                return;
             }
-            else if (result < 0)
+
+            Exception ex;
+            if (result < 0)
             {
-                if (-result == ECONNRESET)
+                var err = -result;
+                if (err == EAGAIN || err == EWOULDBLOCK || err == EINTR)
                 {
-                    context.DisposeAsync();
-                }
-                else if (-result != EAGAIN && -result != EWOULDBLOCK && -result != EINTR)
-                {
-                    throw new ErrnoException(-result);
+                    Debug.WriteLine("Read for nothing");
+                    Read(context);
+                    return;
                 }
 
-                Debug.WriteLine("Read for nothing");
+                if (-result == ECONNRESET)
+                {
+                    ex = new ErrnoException(ECONNRESET);
+                    ex = new ConnectionResetException(ex.Message, ex);
+                }
+                else
+                {
+                    ex = new ErrnoException(-result);
+                }
             }
             else
             {
-                // TODO: handle connection closed
+                // EOF
+                ex = null;
             }
+
+            context.CompleteInput(ex);
         }
 
         private void FlushRead(IoUringConnectionContext context)
         {
-            var flushResult = context.Input.FlushAsync();
-            context.FlushResult = flushResult;
-            if (flushResult.IsCompleted)
+            if (context.FlushAsync())
             {
                 // likely
                 Debug.WriteLine($"Flushed read from {(int)context.Socket} synchronously");
-                context.FlushedToAppSynchronously();
                 ReadPoll(context);
-                return;
             }
-
-            flushResult.GetAwaiter().UnsafeOnCompleted(context.OnFlushedToApp);
         }
 
         private void CompleteWritePoll(IoUringConnectionContext context, int result)
         {
-            if (result < 0)
+            if (result >= 0)
             {
-                if (-result != EAGAIN || -result != EINTR)
-                {
-                    throw new ErrnoException(-result);
-                }
-
-                Debug.WriteLine("Polled write for nothing");
-                WritePoll(context);
-                return;
+                Debug.WriteLine($"Completed write poll on {(int)context.Socket}");
+                Write(context);
             }
-
-            Debug.WriteLine($"Completed write poll on {(int)context.Socket}");
-            Write(context);
+            else 
+            {
+                var err = -result;
+                if (err == EAGAIN || err == EWOULDBLOCK || err == EINTR)
+                {
+                    Debug.WriteLine("Polled write for nothing");
+                    WritePoll(context);
+                }
+                else
+                {
+                    context.CompleteOutput(new ErrnoException(err));
+                }
+            }
         }
 
         private void CompleteWrite(IoUringConnectionContext context, int result)
         {
-            var writeHandles = context.WriteHandles;
-            for (int i = 0; i < writeHandles.Length; i++)
+            foreach (var writeHandle in context.WriteHandles)
             {
-                writeHandles[i].Dispose();
+                writeHandle.Dispose();
             }
 
             var lastWrite = context.LastWrite;
@@ -531,40 +555,40 @@ namespace IoUring.Transport.Internals
 
                 context.Output.AdvanceTo(end);
                 ReadFromApp(context);
+                return;
             }
-            else if (result < 0)
+
+            var err = -result;
+            if (-result == EAGAIN || -result == EWOULDBLOCK || -result == EINTR)
             {
-                if (-result == ECONNRESET || -result == EPIPE)
-                {
-                    context.DisposeAsync();
-                }
-                else if (-result == EAGAIN || -result == EWOULDBLOCK || -result == EINTR)
-                {
-                    Debug.WriteLine("Wrote for nothing");
-                    context.Output.AdvanceTo(lastWrite.Start);
-                    ReadFromApp(context);
-                }
-                else
-                {
-                    throw new ErrnoException(-result);
-                }
+                Debug.WriteLine("Wrote for nothing");
+                context.Output.AdvanceTo(lastWrite.Start);
+                ReadFromApp(context);
+                return;
             }
+
+            Exception ex;
+            if (err == ECONNRESET)
+            {
+                ex = new ErrnoException(err);
+                ex = new ConnectionResetException(ex.Message, ex);
+            }
+            else
+            {
+                ex = new ErrnoException(err);
+            }
+            
+            context.CompleteOutput(ex);
         }
 
         private void ReadFromApp(IoUringConnectionContext context)
         {
-            var readResult = context.Output.ReadAsync();
-            context.ReadResult = readResult;
-            if (readResult.IsCompleted)
+            if (context.ReadAsync())
             {
                 // unlikely
                 Debug.WriteLine($"Read from app for {(int)context.Socket} synchronously");
-                context.ReadFromAppSynchronously();
                 WritePoll(context);
-                return;
             }
-
-            readResult.GetAwaiter().UnsafeOnCompleted(context.OnReadFromApp);
         }
 
         public static ulong Mask(int socket, ulong mask)

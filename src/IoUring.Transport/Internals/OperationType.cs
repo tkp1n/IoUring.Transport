@@ -12,6 +12,7 @@ namespace IoUring.Transport.Internals
         EventFdReadPoll = 1 << 4,
         EventFdRead     = 1 << 5,
         Connect         = 1 << 6,
-        Accept          = 1 << 7
+        Accept          = 1 << 7,
+        Close           = 1 << 8
     }
 }

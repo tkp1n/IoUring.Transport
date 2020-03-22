@@ -18,6 +18,12 @@ using static Tmds.Linux.LibC;
 
 namespace IoUring.Transport.Internals
 {
+    internal enum LoopState
+    {
+        Running,
+        WillBlock
+    }
+
     internal sealed unsafe class TransportThread : IAsyncDisposable
     {
         private const int RingSize = 4096;
@@ -120,12 +126,14 @@ namespace IoUring.Transport.Internals
 
         private void Loop()
         {
+            var state = LoopState.Running;
             ReadPollEventFd();
 
             while (!_disposed)
             {
                 RunAsyncOperations();
-                Submit();
+                state = Submit(state);
+                if (state == LoopState.WillBlock) continue; // Check operation queue again before blocking
                 Complete();
             }
 
@@ -269,13 +277,17 @@ namespace IoUring.Transport.Internals
             context.NotifyClosed();
         }
 
-        private void Submit()
+        private LoopState Submit(LoopState state)
         {
             uint minComplete;
             if (_ring.SubmissionEntriesUsed == 0)
             {
+                if (state == LoopState.Running)
+                {
+                    _threadContext.SetBlockingMode(true);
+                    return LoopState.WillBlock;
+                }
                 minComplete = 1;
-                _threadContext.SetBlockingMode(true);
             }
             else
             {
@@ -284,6 +296,7 @@ namespace IoUring.Transport.Internals
 
             _ring.SubmitAndWait(minComplete, out _);
             _threadContext.SetBlockingMode(false);
+            return LoopState.Running;
         }
 
         private void Complete()

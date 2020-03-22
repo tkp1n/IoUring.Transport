@@ -20,7 +20,7 @@ namespace IoUring.Transport
             return serviceCollection;
         }
 
-        public static IServiceCollection AddIoUringTransport(this IServiceCollection serviceCollection, Action<IoUringOptions> options) => 
+        public static IServiceCollection AddIoUringTransport(this IServiceCollection serviceCollection, Action<IoUringOptions> options) =>
             !OsCompatibility.IsCompatible ? serviceCollection : serviceCollection.Configure(options).AddIoUringTransport();
     }
 }

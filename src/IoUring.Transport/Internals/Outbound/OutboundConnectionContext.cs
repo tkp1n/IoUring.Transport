@@ -19,7 +19,7 @@ namespace IoUring.Transport.Internals.Outbound
             var addrHandle = GCHandle.Alloc(addr, GCHandleType.Pinned);
             _addr = (sockaddr_storage*) addrHandle.AddrOfPinnedObject();
             _addrHandle = addrHandle;
-            
+
             // Add IConnectionInherentKeepAliveFeature to the tcp connection impl since Kestrel doesn't implement
             // the IConnectionHeartbeatFeature
             Features.Set<IConnectionInherentKeepAliveFeature>(this);

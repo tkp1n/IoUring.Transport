@@ -255,7 +255,7 @@ namespace IoUring.Transport.Internals
             }
 
             context.LastWrite = buffer;
-            var socket = context.Socket; 
+            var socket = context.Socket;
             Debug.WriteLine($"Adding write on {(int)socket}");
             _ring.PrepareWriteV(socket, writeVecs ,ctr, 0 ,0, Mask(socket, WriteMask));
         }
@@ -433,7 +433,7 @@ namespace IoUring.Transport.Internals
             {
                 Debug.WriteLine($"Completed read poll on {(int)context.Socket}");
                 Read(context);
-            } 
+            }
             else
             {
                 var err = -result;
@@ -511,7 +511,7 @@ namespace IoUring.Transport.Internals
                 Debug.WriteLine($"Completed write poll on {(int)context.Socket}");
                 Write(context);
             }
-            else 
+            else
             {
                 var err = -result;
                 if (err == EAGAIN || err == EWOULDBLOCK || err == EINTR)
@@ -577,7 +577,7 @@ namespace IoUring.Transport.Internals
             {
                 ex = new ErrnoException(err);
             }
-            
+
             context.CompleteOutput(ex);
         }
 

@@ -25,7 +25,7 @@ namespace IoUring.Transport.Internals
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void SetBlockingMode(bool blocking) 
+        public void SetBlockingMode(bool blocking)
             => Volatile.Write(ref _blockingMode, blocking ? True : False);
 
         public IoUringOptions Options { get; }
@@ -33,14 +33,14 @@ namespace IoUring.Transport.Internals
         public MemoryPool<byte> MemoryPool { get; }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool ShouldUnblock() 
+        private bool ShouldUnblock()
             => Interlocked.CompareExchange(ref _blockingMode, False, True) == True;
 
         public unsafe void Notify()
         {
             if (!ShouldUnblock())
             {
-                // If the transport thread is not (yet) in blocking mode, we have the guarantee, that it will read 
+                // If the transport thread is not (yet) in blocking mode, we have the guarantee, that it will read
                 // from the queues one more time before actually blocking. Therefore, it is safe not to notify now.
                 return;
             }

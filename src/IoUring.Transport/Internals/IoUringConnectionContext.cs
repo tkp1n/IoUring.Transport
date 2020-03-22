@@ -100,7 +100,7 @@ namespace IoUring.Transport.Internals
             {
                 return HandleFlushedToApp(false);
             }
-            
+
             awaiter.UnsafeOnCompleted(_onOnFlushedToApp);
             return false;
         }

@@ -18,12 +18,6 @@ using static Tmds.Linux.LibC;
 
 namespace IoUring.Transport.Internals
 {
-    internal enum LoopState
-    {
-        Running,
-        WillBlock
-    }
-
     internal sealed unsafe class TransportThread : IAsyncDisposable
     {
         private const int RingSize = 4096;
@@ -34,8 +28,8 @@ namespace IoUring.Transport.Internals
         public const ulong WritePollMask =        (ulong) OperationType.WritePoll << 32;
         private const ulong EventFdReadPollMask = (ulong) OperationType.EventFdReadPoll << 32;
         private const ulong EventFdReadMask =     (ulong) OperationType.EventFdRead << 32;
-        private const ulong ConnectMask =         (ulong) OperationType.Connect << 32;
-        private const ulong AcceptMask =          (ulong) OperationType.Accept << 32;
+        public const ulong ConnectMask =          (ulong) OperationType.Connect << 32;
+        public const ulong AcceptMask =           (ulong) OperationType.Accept << 32;
         public const ulong CloseMask =            (ulong) OperationType.Close << 32;
 
         private static int _threadId;
@@ -75,7 +69,7 @@ namespace IoUring.Transport.Internals
             _eventfdIoVec = (iovec*) _eventfdIoVecHandle.AddrOfPinnedObject();
 
             var memoryPool = new SlabMemoryPool();
-            _threadContext = new TransportThreadContext(options, memoryPool, _eventfd, _asyncOperationQueue);
+            _threadContext = new TransportThreadContext(options, memoryPool, _eventfd, _asyncOperationQueue, _asyncOperationStates);
             _maxBufferSize = memoryPool.MaxBufferSize;
         }
 
@@ -88,16 +82,10 @@ namespace IoUring.Transport.Internals
                 s.SetOption(SOL_TCP, TCP_NODELAY, 1);
             }
 
-            var context = new OutboundConnectionContext(s, endpoint, _threadContext);
             var tcs = new TaskCompletionSource<ConnectionContext>(TaskCreationOptions.RunContinuationsAsynchronously); // Ensure the transport thread doesn't run continuations
-            context.ConnectCompletion = tcs;
+            var context = new OutboundConnectionContext(s, endpoint, _threadContext, tcs);
 
-            endpoint.ToSockAddr(context.Addr, out var addrLength);
-            context.AddrLen = addrLength;
-
-            _asyncOperationStates[s] = context;
-            _asyncOperationQueue.Enqueue(Mask(s, ConnectMask));
-            _threadContext.Notify();
+            _threadContext.ScheduleAsyncConnect(s, context);
 
             return new ValueTask<ConnectionContext>(tcs.Task);
         }
@@ -112,10 +100,7 @@ namespace IoUring.Transport.Internals
             s.Listen(ListenBacklog);
 
             var context = new AcceptSocketContext(s, endpoint, acceptQueue);
-
-            _asyncOperationStates[s] = context;
-            _asyncOperationQueue.Enqueue(Mask(s, AcceptMask));
-            _threadContext.Notify();
+            _threadContext.ScheduleAsyncAccept(s, context);
         }
 
         public void Run() => new Thread(obj => ((TransportThread)obj).Loop())
@@ -418,23 +403,18 @@ namespace IoUring.Transport.Internals
 
         private void CompleteConnect(OutboundConnectionContext context, int result)
         {
-            var completion = context.ConnectCompletion;
             if (result < 0)
             {
                 if (-result != EAGAIN || -result != EINTR)
                 {
-                    context.ConnectCompletion = null;
-                    completion.TrySetException(new ErrnoException(-result));
+                    context.CompleteConnect(new ErrnoException(-result));
                 }
 
                 Connect(context);
                 return;
             }
 
-            context.ConnectCompletion = null; // no need to hold on to this
-
-            context.LocalEndPoint = context.Socket.GetLocalAddress();
-            completion.TrySetResult(context);
+            context.CompleteConnect();
 
             ReadPoll(context);
             ReadFromApp(context);
@@ -457,7 +437,7 @@ namespace IoUring.Transport.Internals
                 }
                 else
                 {
-                    context.CompleteInput(new ErrnoException(err));
+                    context.CompleteInput(new ErrnoException(err), onTransportThread: true);
                 }
             }
         }
@@ -504,7 +484,7 @@ namespace IoUring.Transport.Internals
                 ex = null;
             }
 
-            context.CompleteInput(ex);
+            context.CompleteInput(ex, onTransportThread: true);
         }
 
         private void FlushRead(IoUringConnectionContext context)
@@ -534,7 +514,7 @@ namespace IoUring.Transport.Internals
                 }
                 else
                 {
-                    context.CompleteOutput(new ErrnoException(err));
+                    context.CompleteOutput(new ErrnoException(err), onTransportThread: true);
                 }
             }
         }
@@ -591,7 +571,7 @@ namespace IoUring.Transport.Internals
                 ex = new ErrnoException(err);
             }
 
-            context.CompleteOutput(ex);
+            context.CompleteOutput(ex, onTransportThread: true);
         }
 
         private void ReadFromApp(IoUringConnectionContext context)
@@ -614,6 +594,12 @@ namespace IoUring.Transport.Internals
         {
             _disposed = true;
             return new ValueTask(_threadCompletion.Task);
+        }
+
+        private enum LoopState
+        {
+            Running,
+            WillBlock
         }
     }
 }

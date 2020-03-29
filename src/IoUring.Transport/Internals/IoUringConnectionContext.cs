@@ -112,13 +112,13 @@ namespace IoUring.Transport.Internals
                 var result = _flushResultAwaiter.GetResult();
                 if (result.IsCompleted || result.IsCanceled)
                 {
-                    CompleteInput(null);
+                    CompleteInput(null, onTransportThread: async == false);
                     return false;
                 }
             }
             catch (Exception ex)
             {
-                CompleteInput(ex);
+                CompleteInput(ex, onTransportThread: async == false);
                 return false;
             }
 
@@ -153,13 +153,13 @@ namespace IoUring.Transport.Internals
                 ReadResult = buffer;
                 if ((buffer.IsEmpty && result.IsCompleted) || result.IsCanceled)
                 {
-                    CompleteOutput(null);
+                    CompleteOutput(null, onTransportThread: async == false);
                     return false;
                 }
             }
             catch (Exception ex)
             {
-                CompleteOutput(ex);
+                CompleteOutput(ex, onTransportThread: async == false);
                 return false;
             }
 
@@ -172,20 +172,20 @@ namespace IoUring.Transport.Internals
             return true;
         }
 
-        public void CompleteInput(Exception error)
+        public void CompleteInput(Exception error, bool onTransportThread)
         {
             Input.Complete(error);
-            CleanupSocketEnd();
+            CleanupSocketEnd(onTransportThread);
         }
 
-        public void CompleteOutput(Exception error)
+        public void CompleteOutput(Exception error, bool onTransportThread)
         {
             Output.Complete(error);
-            CancelReadFromSocket();
-            CleanupSocketEnd();
+            CancelReadFromSocket(onTransportThread);
+            CleanupSocketEnd(onTransportThread);
         }
 
-        public void CleanupSocketEnd()
+        public void CleanupSocketEnd(bool onTransportThread)
         {
             lock (Gate)
             {
@@ -198,7 +198,7 @@ namespace IoUring.Transport.Internals
                 _flags |= BothClosed;
             }
 
-            _threadContext.ScheduleAsyncClose(Socket);
+            _threadContext.ScheduleAsyncClose(Socket, onTransportThread);
         }
 
         // Invoked when socket was closed by transport thread
@@ -214,7 +214,7 @@ namespace IoUring.Transport.Internals
             _waitForConnectionClosedTcs.SetResult(null);
         }
 
-        private void CancelReadFromSocket()
+        private void CancelReadFromSocket(bool onTransportThread)
         {
             lock (Gate)
             {
@@ -226,10 +226,10 @@ namespace IoUring.Transport.Internals
                 _flags |= ReadCancelled;
             }
 
-            CompleteInput(new ConnectionAbortedException());
+            CompleteInput(new ConnectionAbortedException(), onTransportThread);
         }
 
-        private void CancelWriteToSocket()
+        private void CancelWriteToSocket(bool onTransportThread)
         {
             lock (Gate)
             {
@@ -241,13 +241,13 @@ namespace IoUring.Transport.Internals
                 _flags |= WriteCancelled;
             }
 
-            CompleteOutput(null);
+            CompleteOutput(null, onTransportThread);
         }
 
         public override void Abort(ConnectionAbortedException abortReason)
         {
             Output.CancelPendingRead();
-            CancelWriteToSocket();
+            CancelWriteToSocket(false);
         }
 
         public override async ValueTask DisposeAsync()

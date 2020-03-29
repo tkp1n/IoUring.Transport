@@ -14,14 +14,16 @@ namespace IoUring.Transport.Internals
 
         private readonly int _eventFd;
         private readonly ConcurrentQueue<ulong> _asyncOperationQueue;
+        private readonly ConcurrentDictionary<int, object> _asyncOperationStates;
         private int _blockingMode;
 
-        public TransportThreadContext(IoUringOptions options, MemoryPool<byte> memoryPool, int eventFd, ConcurrentQueue<ulong> asyncOperationQueue)
+        public TransportThreadContext(IoUringOptions options, MemoryPool<byte> memoryPool, int eventFd, ConcurrentQueue<ulong> asyncOperationQueue, ConcurrentDictionary<int, object> asyncOperationStates)
         {
             Options = options;
             MemoryPool = memoryPool;
             _eventFd = eventFd;
             _asyncOperationQueue = asyncOperationQueue;
+            _asyncOperationStates = asyncOperationStates;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -32,11 +34,44 @@ namespace IoUring.Transport.Internals
 
         public MemoryPool<byte> MemoryPool { get; }
 
+        public void ScheduleAsyncAccept(int socket, object state)
+        {
+            _asyncOperationStates[socket] = state;
+            _asyncOperationQueue.Enqueue(TransportThread.Mask(socket, TransportThread.AcceptMask));
+            Notify();
+        }
+
+        public void ScheduleAsyncConnect(int socket, object state)
+        {
+            _asyncOperationStates[socket] = state;
+            _asyncOperationQueue.Enqueue(TransportThread.Mask(socket, TransportThread.ConnectMask));
+            Notify();
+        }
+
+        public void ScheduleAsyncRead(int socket)
+        {
+            _asyncOperationQueue.Enqueue(TransportThread.Mask(socket, TransportThread.ReadPollMask));
+            Notify();
+        }
+
+        public void ScheduleAsyncWrite(int socket)
+        {
+            _asyncOperationQueue.Enqueue(TransportThread.Mask(socket, TransportThread.WritePollMask));
+            Notify();
+        }
+
+        public void ScheduleAsyncClose(int socket, bool onTransportThread)
+        {
+            _asyncOperationQueue.Enqueue(TransportThread.Mask(socket, TransportThread.CloseMask));
+            if (!onTransportThread)
+                Notify();
+        }
+        
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool ShouldUnblock()
             => Interlocked.CompareExchange(ref _blockingMode, False, True) == True;
 
-        public unsafe void Notify()
+        private unsafe void Notify()
         {
             if (!ShouldUnblock())
             {
@@ -57,24 +92,6 @@ namespace IoUring.Transport.Internals
             {
                 rv = (int) write(_eventFd, val, sizeof(ulong));
             } while (rv == -1 && errno == EINTR);
-        }
-
-        public void ScheduleAsyncRead(int socket)
-        {
-            _asyncOperationQueue.Enqueue(TransportThread.Mask(socket, TransportThread.ReadPollMask));
-            Notify();
-        }
-
-        public void ScheduleAsyncWrite(int socket)
-        {
-            _asyncOperationQueue.Enqueue(TransportThread.Mask(socket, TransportThread.WritePollMask));
-            Notify();
-        }
-
-        public void ScheduleAsyncClose(int socket)
-        {
-            _asyncOperationQueue.Enqueue(TransportThread.Mask(socket, TransportThread.CloseMask));
-            Notify(); // TODO: this is not always required (consider to parametrize whether this method is called on the transport thread)
         }
     }
 }

@@ -30,7 +30,10 @@ namespace IoUring.Transport.Internals
         private const ulong EventFdReadMask =     (ulong) OperationType.EventFdRead << 32;
         public const ulong ConnectMask =          (ulong) OperationType.Connect << 32;
         public const ulong AcceptMask =           (ulong) OperationType.Accept << 32;
-        public const ulong CloseMask =            (ulong) OperationType.Close << 32;
+        public const ulong CompleteInboundMask =  (ulong) OperationType.CompleteInbound << 32;
+        public const ulong CompleteOutboundMask = (ulong) OperationType.CompleteOutbound << 32;
+        private const ulong CancelMask =          (ulong) OperationType.Cancel << 32;
+        public const ulong AbortMask =            (ulong) OperationType.Abort << 32;
 
         private static int _threadId;
 
@@ -141,8 +144,14 @@ namespace IoUring.Transport.Internals
                     case OperationType.WritePoll when _connections.TryGetValue(socket, out var context):
                         WritePoll(context);
                         break;
-                    case OperationType.Close when _connections.TryGetValue(socket, out var context):
-                        Close(context);
+                    case OperationType.CompleteInbound when _connections.TryGetValue(socket, out var context) && _asyncOperationStates.Remove(socket, out var error):
+                        CompleteInbound(context, (Exception) error);
+                        break;
+                    case OperationType.CompleteOutbound when _connections.TryGetValue(socket, out var context) && _asyncOperationStates.Remove(socket, out var error):
+                        CompleteOutbound(context, (Exception) error);
+                        break;
+                    case OperationType.Abort when _connections.TryGetValue(socket, out var context) && _asyncOperationStates.Remove(socket, out var error):
+                        Abort(context, (ConnectionAbortedException) error);
                         break;
                     case OperationType.Accept when _asyncOperationStates.Remove(socket, out var context):
                         AddAndAccept(socket, context);
@@ -200,11 +209,12 @@ namespace IoUring.Transport.Internals
         {
             var socket = context.Socket;
             _ring.PreparePollAdd(socket, (ushort) POLLIN, Mask(socket, ReadPollMask));
+            context.SetFlag(ConnectionState.PollingRead);
         }
 
         private void Read(IoUringConnectionContext context)
         {
-            var writer = context.Input;
+            var writer = context.Inbound;
             var readHandles = context.ReadHandles;
             var readVecs = context.ReadVecs;
 
@@ -219,12 +229,14 @@ namespace IoUring.Transport.Internals
             var socket = context.Socket;
             Debug.WriteLine($"Adding read on {(int)socket}");
             _ring.PrepareReadV(socket, readVecs, 1, 0, 0, Mask(socket, ReadMask));
+            context.SetFlag(ConnectionState.Reading);
         }
 
         private void WritePoll(IoUringConnectionContext context)
         {
             var socket = context.Socket;
             _ring.PreparePollAdd(socket, (ushort) POLLOUT, Mask(socket, WritePollMask));
+            context.SetFlag(ConnectionState.PollingWrite);
         }
 
         private void Write(IoUringConnectionContext context)
@@ -251,6 +263,94 @@ namespace IoUring.Transport.Internals
             var socket = context.Socket;
             Debug.WriteLine($"Adding write on {(int)socket}");
             _ring.PrepareWriteV(socket, writeVecs ,ctr, 0 ,0, Mask(socket, WriteMask));
+            context.SetFlag(ConnectionState.Writing);
+        }
+
+        private void CompleteInbound(IoUringConnectionContext context, Exception error)
+        {
+            context.Inbound.Complete(error);
+            CleanupSocketEnd(context);
+        }
+
+        private void CompleteOutbound(IoUringConnectionContext context, Exception error)
+        {
+            context.Outbound.Complete(error);
+            CancelReadFromSocket(context);
+            CleanupSocketEnd(context);
+        }
+
+        private void CancelReadFromSocket(IoUringConnectionContext context)
+        {
+            var flags = context.Flags;
+            if (HasFlag(flags, ConnectionState.ReadCancelled))
+            {
+                return;
+            }
+
+            if (HasFlag(flags, ConnectionState.PollingRead))
+            {
+                Cancel(context.Socket, ReadPollMask);
+            } 
+            else if (HasFlag(flags, ConnectionState.Reading))
+            {
+                Cancel(context.Socket, ReadMask);
+            }
+
+            context.Flags = SetFlag(flags, ConnectionState.ReadCancelled);
+
+            CompleteInbound(context, new ConnectionAbortedException());
+        }
+
+        private void Abort(IoUringConnectionContext context, Exception error)
+        {
+            context.Outbound.CancelPendingRead();
+            CancelWriteToSocket(context);
+        }
+
+        private void CancelWriteToSocket(IoUringConnectionContext context)
+        {
+            var flags = context.Flags;
+
+            if (HasFlag(flags, ConnectionState.WriteCancelled))
+            {
+                return;
+            }
+
+            if (HasFlag(flags, ConnectionState.PollingWrite))
+            {
+                Cancel(context.Socket, WritePollMask);
+            } 
+            else if (HasFlag(flags, ConnectionState.Writing))
+            {
+                Cancel(context.Socket, WriteMask);
+            }
+
+            context.Flags = SetFlag(flags, ConnectionState.WriteCancelled);
+
+            CompleteInbound(context, null);
+        }
+
+        private void CleanupSocketEnd(IoUringConnectionContext context)
+        {
+            var flags = context.Flags;
+            if (!HasFlag(flags, ConnectionState.HalfClosed))
+            {
+                context.Flags = SetFlag(flags, ConnectionState.HalfClosed);
+                return;
+            }
+
+            if (HasFlag(flags, ConnectionState.Closed))
+            {
+                return;
+            }
+
+            context.Flags = SetFlag(flags, ConnectionState.Closed);
+            Close(context);
+        }
+
+        private void Cancel(int socket, ulong mask)
+        {
+            _ring.PrepareCancel(Mask(socket, mask), Mask(socket, CancelMask));
         }
 
         private void Close(IoUringConnectionContext context)
@@ -302,6 +402,8 @@ namespace IoUring.Transport.Internals
                     case OperationType.Accept:
                         CompleteAccept(_acceptSockets[socket], c.result);
                         break;
+                    case OperationType.Cancel:
+                        continue; // Ignore the result of the cancellation request
                 }
 
                 if (!_connections.TryGetValue(socket, out var context)) continue;
@@ -422,6 +524,7 @@ namespace IoUring.Transport.Internals
 
         private void CompleteReadPoll(IoUringConnectionContext context, int result)
         {
+            context.RemoveFlag(ConnectionState.PollingRead);
             if (result >= 0)
             {
                 Debug.WriteLine($"Completed read poll on {(int)context.Socket}");
@@ -435,15 +538,20 @@ namespace IoUring.Transport.Internals
                     Debug.WriteLine("Polled read for nothing");
                     ReadPoll(context);
                 }
+                else if (context.HasFlag(ConnectionState.ReadCancelled) && err == ECANCELED)
+                {
+                    Debug.WriteLine("Read poll was cancelled");
+                }
                 else
                 {
-                    context.CompleteInput(new ErrnoException(err), onTransportThread: true);
+                    CompleteInbound(context, new ErrnoException(err));
                 }
             }
         }
 
         private void CompleteRead(IoUringConnectionContext context, int result)
         {
+            context.RemoveFlag(ConnectionState.Reading);
             foreach (var readHandle in context.ReadHandles)
             {
                 readHandle.Dispose();
@@ -452,7 +560,7 @@ namespace IoUring.Transport.Internals
             if (result > 0)
             {
                 Debug.WriteLine($"Read {result} bytes from {(int)context.Socket}");
-                context.Input.Advance(result);
+                context.Inbound.Advance(result);
                 FlushRead(context);
                 return;
             }
@@ -465,6 +573,12 @@ namespace IoUring.Transport.Internals
                 {
                     Debug.WriteLine("Read for nothing");
                     Read(context);
+                    return;
+                }
+
+                if (context.HasFlag(ConnectionState.ReadCancelled) && err == ECANCELED)
+                {
+                    Debug.WriteLine("Read was cancelled");
                     return;
                 }
 
@@ -484,21 +598,27 @@ namespace IoUring.Transport.Internals
                 ex = null;
             }
 
-            context.CompleteInput(ex, onTransportThread: true);
+            CompleteInbound(context, ex);
         }
 
         private void FlushRead(IoUringConnectionContext context)
         {
-            if (context.FlushAsync())
+            var result = context.FlushAsync();
+            if (result.CompletedSuccessfully)
             {
                 // likely
                 Debug.WriteLine($"Flushed read from {(int)context.Socket} synchronously");
                 ReadPoll(context);
+            } 
+            else if (result.CompletedExceptionally)
+            {
+                CompleteInbound(context, result.GetError());
             }
         }
 
         private void CompleteWritePoll(IoUringConnectionContext context, int result)
         {
+            context.RemoveFlag(ConnectionState.PollingWrite);
             if (result >= 0)
             {
                 Debug.WriteLine($"Completed write poll on {(int)context.Socket}");
@@ -511,16 +631,21 @@ namespace IoUring.Transport.Internals
                 {
                     Debug.WriteLine("Polled write for nothing");
                     WritePoll(context);
+                } 
+                else if (context.HasFlag(ConnectionState.WriteCancelled) && err == ECANCELED)
+                {
+                    Debug.WriteLine("Write poll was cancelled");
                 }
                 else
                 {
-                    context.CompleteOutput(new ErrnoException(err), onTransportThread: true);
+                    CompleteOutbound(context, new ErrnoException(err));
                 }
             }
         }
 
         private void CompleteWrite(IoUringConnectionContext context, int result)
         {
+            context.RemoveFlag(ConnectionState.Writing);
             foreach (var writeHandle in context.WriteHandles)
             {
                 writeHandle.Dispose();
@@ -546,17 +671,23 @@ namespace IoUring.Transport.Internals
                     end = lastWrite.GetPosition(result);
                 }
 
-                context.Output.AdvanceTo(end);
+                context.Outbound.AdvanceTo(end);
                 ReadFromApp(context);
                 return;
             }
 
             var err = -result;
-            if (-result == EAGAIN || -result == EWOULDBLOCK || -result == EINTR)
+            if (err == EAGAIN || err == EWOULDBLOCK || err == EINTR)
             {
                 Debug.WriteLine("Wrote for nothing");
-                context.Output.AdvanceTo(lastWrite.Start);
+                context.Outbound.AdvanceTo(lastWrite.Start);
                 ReadFromApp(context);
+                return;
+            }
+
+            if (context.HasFlag(ConnectionState.WriteCancelled) && err == ECANCELED)
+            {
+                Debug.WriteLine("Write was cancelled");
                 return;
             }
 
@@ -571,16 +702,21 @@ namespace IoUring.Transport.Internals
                 ex = new ErrnoException(err);
             }
 
-            context.CompleteOutput(ex, onTransportThread: true);
+            CompleteOutbound(context, ex);
         }
 
         private void ReadFromApp(IoUringConnectionContext context)
         {
-            if (context.ReadAsync())
+            var result = context.ReadAsync();
+            if (result.CompletedSuccessfully)
             {
                 // unlikely
                 Debug.WriteLine($"Read from app for {(int)context.Socket} synchronously");
                 WritePoll(context);
+            } 
+            else if (result.CompletedExceptionally)
+            {
+                CompleteOutbound(context, result.GetError());
             }
         }
 
@@ -589,6 +725,9 @@ namespace IoUring.Transport.Internals
             var socketUl = (ulong)socket;
             return socketUl | mask;
         }
+
+        private static bool HasFlag(ConnectionState flag, ConnectionState test) => (flag & test) != 0;
+        private static ConnectionState SetFlag(ConnectionState flag, ConnectionState newFlag) => flag | newFlag;
 
         public ValueTask DisposeAsync()
         {

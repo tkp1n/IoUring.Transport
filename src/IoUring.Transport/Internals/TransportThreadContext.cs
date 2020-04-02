@@ -1,3 +1,4 @@
+using System;
 using System.Buffers;
 using System.Collections.Concurrent;
 using System.Diagnostics;
@@ -60,13 +61,27 @@ namespace IoUring.Transport.Internals
             Notify();
         }
 
-        public void ScheduleAsyncClose(int socket, bool onTransportThread)
+        public void ScheduleAsyncInboundCompletion(int socket, Exception error)
         {
-            _asyncOperationQueue.Enqueue(TransportThread.Mask(socket, TransportThread.CloseMask));
-            if (!onTransportThread)
-                Notify();
+            _asyncOperationStates[socket] = error;
+            _asyncOperationQueue.Enqueue(TransportThread.Mask(socket, TransportThread.CompleteInboundMask));
+            Notify();
         }
-        
+
+        public void ScheduleAsyncOutboundCompletion(int socket, Exception error)
+        {
+            _asyncOperationStates[socket] = error;
+            _asyncOperationQueue.Enqueue(TransportThread.Mask(socket, TransportThread.CompleteOutboundMask));
+            Notify();
+        }
+
+        public void ScheduleAsyncAbort(int socket, Exception error)
+        {
+            _asyncOperationStates[socket] = error;
+            _asyncOperationQueue.Enqueue(TransportThread.Mask(socket, TransportThread.AbortMask));
+            Notify();
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool ShouldUnblock()
             => Interlocked.CompareExchange(ref _blockingMode, False, True) == True;
@@ -93,5 +108,6 @@ namespace IoUring.Transport.Internals
                 rv = (int) write(_eventFd, val, sizeof(ulong));
             } while (rv == -1 && errno == EINTR);
         }
+
     }
 }

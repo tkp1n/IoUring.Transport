@@ -12,13 +12,21 @@ using Tmds.Linux;
 
 namespace IoUring.Transport.Internals
 {
+    [Flags]
+    internal enum ConnectionState
+    {
+        PollingRead     = 1 << 0,
+        Reading         = 1 << 1,
+        PollingWrite    = 1 << 2,
+        Writing         = 1 << 3,
+        ReadCancelled   = 1 << 4,
+        WriteCancelled  = 1 << 5,
+        HalfClosed      = 1 << 6,
+        Closed          = 1 << 7
+    }
+
     internal abstract class IoUringConnectionContext : TransportConnection
     {
-        private const int ReadCancelled = 0x1;
-        private const int WriteCancelled = 0x2;
-        private const int HalfClosed = 0x20;
-        private const int BothClosed = 0x40;
-
         private const int ReadIOVecCount = 1;
         private const int WriteIOVecCount = 8;
 
@@ -39,7 +47,6 @@ namespace IoUring.Transport.Internals
 
         private readonly CancellationTokenSource _connectionClosedTokenSource;
         private readonly TaskCompletionSource<object> _waitForConnectionClosedTcs;
-        private int _flags;
 
         protected IoUringConnectionContext(LinuxSocket socket, EndPoint local, EndPoint remote, TransportThreadContext threadContext)
         {
@@ -73,7 +80,7 @@ namespace IoUring.Transport.Internals
             _iovecHandle = vecsHandle;
         }
 
-        private object Gate => this;
+        public ConnectionState Flags { get; set; }
 
         public LinuxSocket Socket { get; }
 
@@ -85,67 +92,74 @@ namespace IoUring.Transport.Internals
         public MemoryHandle[] ReadHandles { get; } = new MemoryHandle[ReadIOVecCount];
         public MemoryHandle[] WriteHandles { get; } = new MemoryHandle[WriteIOVecCount];
 
-        public PipeWriter Input => Application.Output;
+        /// <summary>
+        /// Data read from the socket will be flushed to this <see cref="PipeWriter"/>
+        /// </summary>
+        public PipeWriter Inbound => Application.Output;
 
-        public PipeReader Output => Application.Input;
+        /// <summary>
+        /// Data read from this <see cref="PipeReader"/> will be written to the socket.
+        /// </summary>
+        public PipeReader Outbound => Application.Input;
 
         public ReadOnlySequence<byte> ReadResult { get; private set; }
         public ReadOnlySequence<byte> LastWrite { get; set; }
 
-        public bool FlushAsync()
+        public AsyncOperationResult FlushAsync()
         {
-            var awaiter = Input.FlushAsync().GetAwaiter();
+            var awaiter = Inbound.FlushAsync().GetAwaiter();
             _flushResultAwaiter = awaiter;
             if (awaiter.IsCompleted)
             {
-                return HandleFlushedToApp(false);
+                return HandleFlushedToApp(true);
             }
 
             awaiter.UnsafeOnCompleted(_onOnFlushedToApp);
-            return false;
+            return default;
         }
 
-        private bool HandleFlushedToApp(bool async = true)
+        private AsyncOperationResult HandleFlushedToApp(bool onTransportThread = false)
         {
+            Exception error = null;
             try
             {
                 var result = _flushResultAwaiter.GetResult();
                 if (result.IsCompleted || result.IsCanceled)
                 {
-                    CompleteInput(null, onTransportThread: async == false);
-                    return false;
+                    error = AsyncOperationResult.CompleteWithoutErrorSentinel;
                 }
             }
             catch (Exception ex)
             {
-                CompleteInput(ex, onTransportThread: async == false);
-                return false;
+                error = ex;
             }
 
-            if (async)
+            if (onTransportThread)
             {
-                Debug.WriteLine($"Flushed to app for {(int)Socket} asynchronously");
-                _threadContext.ScheduleAsyncRead(Socket);
+                return new AsyncOperationResult(true, error);
             }
 
-            return true;
+            Debug.WriteLine($"Flushed to app for {(int)Socket} asynchronously");
+            _threadContext.ScheduleAsyncRead(Socket);
+            return default; // no one cares
         }
 
-        public bool ReadAsync()
+        public AsyncOperationResult ReadAsync()
         {
-            var awaiter = Output.ReadAsync().GetAwaiter();
+            var awaiter = Outbound.ReadAsync().GetAwaiter();
             _readResultAwaiter = awaiter;
             if (awaiter.IsCompleted)
             {
-                return HandleReadFromApp(false);
+                return HandleReadFromApp(true);
             }
 
             awaiter.UnsafeOnCompleted(_onReadFromApp);
-            return false;
+            return default;
         }
 
-        private bool HandleReadFromApp(bool async = true)
+        private AsyncOperationResult HandleReadFromApp(bool onTransportThread = false)
         {
+            Exception error = null;
             try
             {
                 var result = _readResultAwaiter.GetResult();
@@ -153,53 +167,27 @@ namespace IoUring.Transport.Internals
                 ReadResult = buffer;
                 if ((buffer.IsEmpty && result.IsCompleted) || result.IsCanceled)
                 {
-                    CompleteOutput(null, onTransportThread: async == false);
-                    return false;
+                    error = AsyncOperationResult.CompleteWithoutErrorSentinel;
                 }
             }
             catch (Exception ex)
             {
-                CompleteOutput(ex, onTransportThread: async == false);
-                return false;
+                error = ex;
             }
 
-            if (async)
+            if (onTransportThread)
             {
-                Debug.WriteLine($"Read from app for {(int)Socket} asynchronously");
-                _threadContext.ScheduleAsyncWrite(Socket);
+                return new AsyncOperationResult(true, error);
             }
 
-            return true;
+            Debug.WriteLine($"Read from app for {(int)Socket} asynchronously");
+            _threadContext.ScheduleAsyncWrite(Socket);
+            return default; // no one cares
         }
 
-        public void CompleteInput(Exception error, bool onTransportThread)
-        {
-            Input.Complete(error);
-            CleanupSocketEnd(onTransportThread);
-        }
-
-        public void CompleteOutput(Exception error, bool onTransportThread)
-        {
-            Output.Complete(error);
-            CancelReadFromSocket(onTransportThread);
-            CleanupSocketEnd(onTransportThread);
-        }
-
-        public void CleanupSocketEnd(bool onTransportThread)
-        {
-            lock (Gate)
-            {
-                if ((_flags & HalfClosed) == 0)
-                {
-                    _flags |= HalfClosed;
-                    return;
-                }
-
-                _flags |= BothClosed;
-            }
-
-            _threadContext.ScheduleAsyncClose(Socket, onTransportThread);
-        }
+        public bool HasFlag(ConnectionState flag) => (Flags & flag) != 0;
+        public void SetFlag(ConnectionState flag) => Flags |= flag;
+        public void RemoveFlag(ConnectionState flag) => Flags &= ~flag;
 
         // Invoked when socket was closed by transport thread
         public void NotifyClosed()
@@ -214,40 +202,9 @@ namespace IoUring.Transport.Internals
             _waitForConnectionClosedTcs.SetResult(null);
         }
 
-        private void CancelReadFromSocket(bool onTransportThread)
-        {
-            lock (Gate)
-            {
-                if ((_flags & ReadCancelled) != 0)
-                {
-                    return;
-                }
-
-                _flags |= ReadCancelled;
-            }
-
-            CompleteInput(new ConnectionAbortedException(), onTransportThread);
-        }
-
-        private void CancelWriteToSocket(bool onTransportThread)
-        {
-            lock (Gate)
-            {
-                if ((_flags & WriteCancelled) != 0)
-                {
-                    return;
-                }
-
-                _flags |= WriteCancelled;
-            }
-
-            CompleteOutput(null, onTransportThread);
-        }
-
         public override void Abort(ConnectionAbortedException abortReason)
         {
-            Output.CancelPendingRead();
-            CancelWriteToSocket(false);
+            _threadContext.ScheduleAsyncAbort(Socket, abortReason);
         }
 
         public override async ValueTask DisposeAsync()

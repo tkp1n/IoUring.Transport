@@ -9,7 +9,7 @@ using Tmds.Linux;
 
 namespace IoUring.Transport.Internals.Outbound
 {
-    internal sealed unsafe class OutboundConnectionContext : IoUringConnectionContext, IConnectionInherentKeepAliveFeature
+    internal sealed class OutboundConnectionContext : IoUringConnectionContext, IConnectionInherentKeepAliveFeature
     {
         private GCHandle _addrHandle;
         private TaskCompletionSource<ConnectionContext> _connectCompletion;
@@ -19,13 +19,16 @@ namespace IoUring.Transport.Internals.Outbound
         {
             if (!(remote is IPEndPoint)) throw new NotSupportedException(); // TODO
 
-            sockaddr_storage addr = default;
-            var addrHandle = GCHandle.Alloc(addr, GCHandleType.Pinned);
-            Addr = (sockaddr_storage*) addrHandle.AddrOfPinnedObject();
-            _addrHandle = addrHandle;
+            unsafe
+            {
+                sockaddr_storage addr = default;
+                var addrHandle = GCHandle.Alloc(addr, GCHandleType.Pinned);
+                Addr = (sockaddr_storage*) addrHandle.AddrOfPinnedObject();
+                _addrHandle = addrHandle;
 
-            ((IPEndPoint)remote).ToSockAddr(Addr, out var addrLength);
-            AddrLen = addrLength;
+                ((IPEndPoint) remote).ToSockAddr(Addr, out var addrLength);
+                AddrLen = addrLength;
+            }
 
             _connectCompletion = connectCompletion;
             
@@ -37,7 +40,7 @@ namespace IoUring.Transport.Internals.Outbound
         // We claim to have inherent keep-alive so the client doesn't kill the connection when it hasn't seen ping frames.
         public bool HasInherentKeepAlive => true;
 
-        public sockaddr_storage* Addr { get; }
+        public unsafe sockaddr_storage* Addr { get; }
 
         public socklen_t AddrLen { get; }
 
@@ -55,15 +58,14 @@ namespace IoUring.Transport.Internals.Outbound
             Debug.Assert(_connectCompletion != null);
 
             _connectCompletion.TrySetException(ex);
-            _ = DisposeAsync();
         }
 
-        public override ValueTask DisposeAsync()
+        public override async ValueTask DisposeAsync()
         {
+            await base.DisposeAsync();
+       
             if (_addrHandle.IsAllocated)
                 _addrHandle.Free();
-
-            return base.DisposeAsync();
         }
     }
 }

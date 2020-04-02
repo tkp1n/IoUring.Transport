@@ -1,4 +1,5 @@
 using System.Net;
+using Microsoft.AspNetCore.Connections;
 using Tmds.Linux;
 using static Tmds.Linux.LibC;
 
@@ -24,7 +25,21 @@ namespace IoUring.Transport.Internals
             sockaddr_storage addr;
             endPoint.ToSockAddr(&addr, out var length);
             var rv = bind(_fd, (sockaddr*) &addr, length);
-            if (rv < 0) throw new ErrnoException(errno);
+            if (rv < 0)
+            {
+                var error = errno;
+                if (error == EADDRINUSE)
+                {
+                    throw new AddressInUseException("Address in use.");
+                }
+
+                if (error == EADDRNOTAVAIL)
+                {
+                    throw new AddressNotAvailableException("Address not available.");
+                }
+
+                throw new ErrnoException(errno);
+            }
         }
 
         public void Listen(int backlog)

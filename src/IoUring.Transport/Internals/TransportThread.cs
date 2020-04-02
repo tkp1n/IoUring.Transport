@@ -138,27 +138,32 @@ namespace IoUring.Transport.Internals
 
                 switch (operationType)
                 {
-                    case OperationType.ReadPoll when _connections.TryGetValue(socket, out var context):
-                        ReadPoll(context);
-                        break;
-                    case OperationType.WritePoll when _connections.TryGetValue(socket, out var context):
-                        WritePoll(context);
-                        break;
-                    case OperationType.CompleteInbound when _connections.TryGetValue(socket, out var context) && _asyncOperationStates.Remove(socket, out var error):
-                        CompleteInbound(context, (Exception) error);
-                        break;
-                    case OperationType.CompleteOutbound when _connections.TryGetValue(socket, out var context) && _asyncOperationStates.Remove(socket, out var error):
-                        CompleteOutbound(context, (Exception) error);
-                        break;
-                    case OperationType.Abort when _connections.TryGetValue(socket, out var context) && _asyncOperationStates.Remove(socket, out var error):
-                        Abort(context, (ConnectionAbortedException) error);
-                        break;
-                    case OperationType.Accept when _asyncOperationStates.Remove(socket, out var context):
-                        AddAndAccept(socket, context);
-                        break;
-                    case OperationType.Connect when _asyncOperationStates.Remove(socket, out var context):
-                        AddAndConnect(socket, context);
-                        break;
+                    case OperationType.ReadPoll:
+                        ReadPoll(_connections[socket]);
+                        continue;
+                    case OperationType.WritePoll:
+                        WritePoll(_connections[socket]);
+                        continue;
+                }
+
+                _asyncOperationStates.Remove(socket, out var state);
+                switch (operationType)
+                {
+                    case OperationType.Accept:
+                        AddAndAccept(socket, state);
+                        continue;
+                    case OperationType.Connect:
+                        AddAndConnect(socket, state);
+                        continue;
+                    case OperationType.CompleteInbound:
+                        CompleteInbound(_connections[socket], (Exception) state);
+                        continue;
+                    case OperationType.CompleteOutbound:
+                        CompleteOutbound(_connections[socket], (Exception) state);
+                        continue;
+                    case OperationType.Abort:
+                        Abort(_connections[socket], (ConnectionAbortedException) state);
+                        continue;
                 }
             }
         }
@@ -179,8 +184,7 @@ namespace IoUring.Transport.Internals
 
         private void AddAndAccept(int socket, object context)
         {
-            Debug.Assert(context is AcceptSocketContext);
-            var acceptSocketContext = Unsafe.As<AcceptSocketContext>(context);
+            var acceptSocketContext = (AcceptSocketContext) context;
             _acceptSockets[socket] = acceptSocketContext;
             Accept(acceptSocketContext);
         }
@@ -193,8 +197,7 @@ namespace IoUring.Transport.Internals
 
         private void AddAndConnect(int socket, object context)
         {
-            Debug.Assert(context is OutboundConnectionContext);
-            var outboundConnectionContext = Unsafe.As<OutboundConnectionContext>(context);
+            var outboundConnectionContext = (OutboundConnectionContext) context;
             _connections[socket] = outboundConnectionContext;
             Connect(outboundConnectionContext);
         }

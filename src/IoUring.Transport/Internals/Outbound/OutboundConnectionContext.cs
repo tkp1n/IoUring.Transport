@@ -31,7 +31,7 @@ namespace IoUring.Transport.Internals.Outbound
             }
 
             _connectCompletion = connectCompletion;
-            
+
             // Add IConnectionInherentKeepAliveFeature to the tcp connection impl since Kestrel doesn't implement
             // the IConnectionHeartbeatFeature
             Features.Set<IConnectionInherentKeepAliveFeature>(this);
@@ -63,7 +63,7 @@ namespace IoUring.Transport.Internals.Outbound
         public override async ValueTask DisposeAsync()
         {
             await base.DisposeAsync();
-       
+
             if (_addrHandle.IsAllocated)
                 _addrHandle.Free();
         }

@@ -5,7 +5,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Channels;
@@ -293,7 +292,7 @@ namespace IoUring.Transport.Internals
             if (HasFlag(flags, ConnectionState.PollingRead))
             {
                 Cancel(context.Socket, ReadPollMask);
-            } 
+            }
             else if (HasFlag(flags, ConnectionState.Reading))
             {
                 Cancel(context.Socket, ReadMask);
@@ -322,7 +321,7 @@ namespace IoUring.Transport.Internals
             if (HasFlag(flags, ConnectionState.PollingWrite))
             {
                 Cancel(context.Socket, WritePollMask);
-            } 
+            }
             else if (HasFlag(flags, ConnectionState.Writing))
             {
                 Cancel(context.Socket, WriteMask);
@@ -612,7 +611,7 @@ namespace IoUring.Transport.Internals
                 // likely
                 Debug.WriteLine($"Flushed read from {(int)context.Socket} synchronously");
                 ReadPoll(context);
-            } 
+            }
             else if (result.CompletedExceptionally)
             {
                 CompleteInbound(context, result.GetError());
@@ -634,7 +633,7 @@ namespace IoUring.Transport.Internals
                 {
                     Debug.WriteLine("Polled write for nothing");
                     WritePoll(context);
-                } 
+                }
                 else if (context.HasFlag(ConnectionState.WriteCancelled) && err == ECANCELED)
                 {
                     Debug.WriteLine("Write poll was cancelled");
@@ -716,7 +715,7 @@ namespace IoUring.Transport.Internals
                 // unlikely
                 Debug.WriteLine($"Read from app for {(int)context.Socket} synchronously");
                 WritePoll(context);
-            } 
+            }
             else if (result.CompletedExceptionally)
             {
                 CompleteOutbound(context, result.GetError());

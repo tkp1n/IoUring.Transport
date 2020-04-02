@@ -123,8 +123,8 @@ namespace IoUring.Transport.Internals
             Exception error = null;
             try
             {
-                var result = _flushResultAwaiter.GetResult();
-                if (result.IsCompleted || result.IsCanceled)
+                var flushResult = _flushResultAwaiter.GetResult();
+                if (flushResult.IsCompleted || flushResult.IsCanceled)
                 {
                     error = AsyncOperationResult.CompleteWithoutErrorSentinel;
                 }
@@ -134,14 +134,23 @@ namespace IoUring.Transport.Internals
                 error = ex;
             }
 
+            var result = new AsyncOperationResult(onTransportThread, error);
             if (onTransportThread)
             {
-                return new AsyncOperationResult(true, error);
+                return result;
             }
 
-            Debug.WriteLine($"Flushed to app for {(int)Socket} asynchronously");
-            _threadContext.ScheduleAsyncRead(Socket);
-            return default; // no one cares
+            if (error != null)
+            {
+                _threadContext.ScheduleAsyncInboundCompletion(Socket, result.GetError());
+            }
+            else
+            {
+                Debug.WriteLine($"Flushed to app for {(int) Socket} asynchronously");
+                _threadContext.ScheduleAsyncRead(Socket);
+            }
+
+            return result;
         }
 
         public AsyncOperationResult ReadAsync()
@@ -162,10 +171,10 @@ namespace IoUring.Transport.Internals
             Exception error = null;
             try
             {
-                var result = _readResultAwaiter.GetResult();
-                var buffer = result.Buffer;
+                var readResult = _readResultAwaiter.GetResult();
+                var buffer = readResult.Buffer;
                 ReadResult = buffer;
-                if ((buffer.IsEmpty && result.IsCompleted) || result.IsCanceled)
+                if ((buffer.IsEmpty && readResult.IsCompleted) || readResult.IsCanceled)
                 {
                     error = AsyncOperationResult.CompleteWithoutErrorSentinel;
                 }
@@ -175,14 +184,23 @@ namespace IoUring.Transport.Internals
                 error = ex;
             }
 
+            var result = new AsyncOperationResult(onTransportThread, error);
             if (onTransportThread)
             {
-                return new AsyncOperationResult(true, error);
+                return result;
             }
 
-            Debug.WriteLine($"Read from app for {(int)Socket} asynchronously");
-            _threadContext.ScheduleAsyncWrite(Socket);
-            return default; // no one cares
+            if (error != null)
+            {
+                _threadContext.ScheduleAsyncOutboundCompletion(Socket, result.GetError());
+            }
+            else
+            {
+                Debug.WriteLine($"Read from app for {(int)Socket} asynchronously");
+                _threadContext.ScheduleAsyncWrite(Socket);
+            }
+
+            return result;
         }
 
         public bool HasFlag(ConnectionState flag) => (Flags & flag) != 0;

@@ -1,4 +1,6 @@
 using System;
+using System.Diagnostics;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using IoUring.Transport.Internals.Inbound;
@@ -9,9 +11,12 @@ namespace IoUring.Transport.Internals
 {
     internal sealed class IoUringTransport : IAsyncDisposable
     {
-        private object _lock;
+        private const int Disposed = -1;
+
+        private object _lock = new object();
         private TransportThread[] _transportThreads;
         private AcceptThread _acceptThread;
+        private int _refCount;
 
         public IoUringTransport(IOptions<IoUringOptions> options, ILoggerFactory loggerFactory)
         {
@@ -25,10 +30,11 @@ namespace IoUring.Transport.Internals
         public ILoggerFactory LoggerFactory { get; }
         public TransportThread[] TransportThreads => LazyInitializer.EnsureInitialized(ref _transportThreads, ref _lock, () => CreateTransportThreads());
 
-        public AcceptThread AcceptThread => LazyInitializer.EnsureInitialized(ref _acceptThread, ref _lock, () => CreateAcceptThread());
-
         private TransportThread[] CreateTransportThreads()
         {
+            Debug.Assert(Monitor.IsEntered(_lock));
+            if (_refCount == Disposed) throw new ObjectDisposedException(nameof(IoUringTransport));
+
             var threads = new TransportThread[Options.ThreadCount];
             for (int i = 0; i < threads.Length; i++)
             {
@@ -40,19 +46,62 @@ namespace IoUring.Transport.Internals
             return threads;
         }
 
-        private static AcceptThread CreateAcceptThread()
+        public AcceptThread AcceptThread => LazyInitializer.EnsureInitialized(ref _acceptThread, ref _lock, () => CreateAcceptThread());
+
+        private AcceptThread CreateAcceptThread()
         {
-            var thread = new AcceptThread();
+            Debug.Assert(Monitor.IsEntered(_lock));
+            if (_refCount == Disposed) throw new ObjectDisposedException(nameof(IoUringTransport));
+
+            var schedulers = TransportThreads.Select(t => t.Scheduler).ToArray();
+
+            var thread = new AcceptThread(Options, schedulers);
             thread.Run();
             return thread;
         }
 
+        public void IncrementThreadRefCount()
+        {
+            lock (_lock)
+            {
+                if (_refCount == Disposed) throw new ObjectDisposedException(nameof(IoUringTransport));
+                _refCount++;
+            }
+        }
+
+        public void DecrementThreadRefCount()
+        {
+            lock (_lock)
+            {
+                if (_refCount == Disposed) throw new ObjectDisposedException(nameof(IoUringTransport));
+                _refCount--;
+            }
+        }
+
         public async ValueTask DisposeAsync()
         {
-            foreach (var transportThread in _transportThreads)
+            TransportThread[] transportThreads;
+            AcceptThread acceptThread;
+
+            lock (_lock)
             {
-                await transportThread.DisposeAsync();
+                if (_refCount == Disposed) return;
+                if ( _refCount != 0) throw new InvalidOperationException();
+                _refCount = Disposed;
+                transportThreads = _transportThreads;
+                acceptThread = _acceptThread;
             }
+
+            if (transportThreads != null)
+            {
+                foreach (var transportThread in transportThreads)
+                {
+                    await transportThread.DisposeAsync();
+                }
+            }
+
+            if (acceptThread != null)
+                await _acceptThread.DisposeAsync();
         }
     }
 }

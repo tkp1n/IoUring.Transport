@@ -12,49 +12,88 @@ namespace IoUring.Transport.Internals.Inbound
     internal class ConnectionListener : IConnectionListener
     {
         private readonly IoUringTransport _transport;
-        private readonly IoUringOptions _options;
-
-        private ChannelReader<ConnectionContext> _acceptQueue;
+        private readonly Channel<ConnectionContext> _acceptQueue;
+        private ConnectionListenerState _state = ConnectionListenerState.New;
 
         private ConnectionListener(EndPoint endpoint, IoUringTransport transport, IoUringOptions options)
         {
-            EndPoint = endpoint;
             _transport = transport;
-            _options = options;
+            _acceptQueue = Channel.CreateUnbounded<ConnectionContext>(new UnboundedChannelOptions
+            {
+                SingleReader = true, // reads happen sequentially
+                SingleWriter = false,
+                AllowSynchronousContinuations = options.ApplicationSchedulingMode == PipeScheduler.Inline
+            });
+
+            EndPoint = endpoint;
         }
 
         public EndPoint EndPoint { get; }
 
-        public static ValueTask<IConnectionListener> Create(EndPoint endpoint, IoUringTransport transport, IoUringOptions options)
+        private object Gate => this;
+
+        public static async ValueTask<IConnectionListener> BindAsync(EndPoint endpoint, IoUringTransport transport, IoUringOptions options)
         {
             var listener = new ConnectionListener(endpoint, transport, options);
-            listener.Bind();
-            return new ValueTask<IConnectionListener>(listener);
+            await listener.BindAsync();
+            return listener;
         }
 
-        private void Bind()
+        private async ValueTask BindAsync()
         {
-            if (!(EndPoint is IPEndPoint)) throw new NotSupportedException();
-            if (EndPoint.AddressFamily != AddressFamily.InterNetwork && EndPoint.AddressFamily != AddressFamily.InterNetworkV6) throw new NotSupportedException();
-
-            var acceptQueue = Channel.CreateUnbounded<ConnectionContext>(new UnboundedChannelOptions
+            lock (Gate)
             {
-                SingleReader = false,
-                SingleWriter = false,
-                AllowSynchronousContinuations = _options.ApplicationSchedulingMode == PipeScheduler.Inline
-            });
-            _acceptQueue = acceptQueue.Reader;
+                if (_state >= ConnectionListenerState.Disposing) throw new ObjectDisposedException(nameof(ConnectionListener));
+                if (_state != ConnectionListenerState.New) throw new InvalidOperationException();
+                _state = ConnectionListenerState.Binding;
+            }
 
-            var threads = _transport.TransportThreads;
-            foreach (var thread in threads)
+            try
             {
-                thread.Bind((IPEndPoint) EndPoint, acceptQueue.Writer);
+                _transport.IncrementThreadRefCount();
+                var endpoint = EndPoint;
+                switch (endpoint)
+                {
+                    case IPEndPoint ipEndPoint when ipEndPoint.AddressFamily == AddressFamily.InterNetwork || ipEndPoint.AddressFamily == AddressFamily.InterNetworkV6:
+                        var threads = _transport.TransportThreads;
+                        foreach (var thread in threads)
+                        {
+                            thread.Bind(ipEndPoint, _acceptQueue);
+                        }
+
+                        break;
+                    case UnixDomainSocketEndPoint unixDomainSocketEndPoint:
+                        _transport.AcceptThread.Bind(unixDomainSocketEndPoint, _acceptQueue);
+                        break;
+                    case FileHandleEndPoint fileHandleEndPoint:
+                        _transport.AcceptThread.Bind(fileHandleEndPoint, _acceptQueue);
+                        break;
+                    default:
+                        throw new NotSupportedException($"Unknown Endpoint {endpoint.GetType()}");
+                }
+
+                lock (Gate)
+                {
+                    if (_state != ConnectionListenerState.Binding) throw new InvalidOperationException();
+                    _state = ConnectionListenerState.Bound;
+                }
+            }
+            catch (Exception)
+            {
+                await DisposeAsync();
+                throw;
             }
         }
 
         public async ValueTask<ConnectionContext> AcceptAsync(CancellationToken cancellationToken = default)
         {
-            await foreach (var connection in _acceptQueue.ReadAllAsync(cancellationToken).ConfigureAwait(false))
+            lock (Gate)
+            {
+                if (_state >= ConnectionListenerState.Disposing) throw new ObjectDisposedException(nameof(ConnectionListener));
+                if (_state != ConnectionListenerState.Bound) throw new InvalidOperationException();
+            }
+
+            await foreach (var connection in _acceptQueue.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
             {
                 return connection;
             }
@@ -62,14 +101,77 @@ namespace IoUring.Transport.Internals.Inbound
             return null;
         }
 
-        public ValueTask UnbindAsync(CancellationToken cancellationToken = default)
+        public async ValueTask UnbindAsync(CancellationToken cancellationToken = default)
         {
-            throw new NotImplementedException();
+            lock (Gate)
+            {
+                if (_state >= ConnectionListenerState.Disposing) throw new ObjectDisposedException(nameof(ConnectionListener));
+                if (_state != ConnectionListenerState.Bound) throw new InvalidOperationException();
+                _state = ConnectionListenerState.Unbinding;
+            }
+
+            try
+            {
+                switch (EndPoint)
+                {
+                    case IPEndPoint ipEndPoint:
+                        var threads = _transport.TransportThreads;
+                        foreach (var thread in threads)
+                        {
+                            await thread.Unbind(ipEndPoint);
+                        }
+                        break;
+                    default:
+                        await _transport.AcceptThread.Unbind(EndPoint);
+                        break;
+                }
+
+                _acceptQueue.Writer.Complete();
+
+                lock (Gate)
+                {
+                    if (_state != ConnectionListenerState.Unbinding) throw new InvalidOperationException();
+                    _state = ConnectionListenerState.Unbound;
+                }
+            }
+            catch (Exception)
+            {
+                await DisposeAsync();
+                throw;
+            }
         }
 
         public ValueTask DisposeAsync()
         {
-            throw new NotImplementedException();
+            lock (Gate)
+            {
+                if (_state >= ConnectionListenerState.Disposing)
+                {
+                    return default; // Dispose already in progress
+                }
+
+                _state = ConnectionListenerState.Disposing;
+            }
+
+            _transport.DecrementThreadRefCount();
+
+            lock (Gate)
+            {
+                _state = ConnectionListenerState.Disposed;
+            }
+
+            return default;
+        }
+
+        private enum ConnectionListenerState
+        {
+            New,
+            Binding,
+            Bound,
+            Unbinding,
+            Unbound,
+            Disposing,
+            Disposed
         }
     }
 }

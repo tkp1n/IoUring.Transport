@@ -18,6 +18,6 @@ namespace IoUring.Transport.Internals.Inbound
         }
 
         public ValueTask<IConnectionListener> BindAsync(EndPoint endpoint, CancellationToken cancellationToken = default)
-            => ConnectionListener.Create(endpoint, _ioUringTransport, _options);
+            => ConnectionListener.BindAsync(endpoint, _ioUringTransport, _options);
     }
 }

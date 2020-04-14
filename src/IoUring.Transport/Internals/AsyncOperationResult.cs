@@ -20,7 +20,6 @@ namespace IoUring.Transport.Internals
 
         public Exception GetError()
         {
-            Debug.Assert(_completedSynchronously);
             Debug.Assert(_error != null);
 
             return _error == CompleteWithoutErrorSentinel ? null : _error;

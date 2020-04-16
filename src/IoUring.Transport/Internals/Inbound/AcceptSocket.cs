@@ -46,7 +46,7 @@ namespace IoUring.Transport.Internals.Inbound
         public static AcceptSocket Bind(IPEndPoint ipEndPoint, ChannelWriter<ConnectionContext> acceptQueue, IoUringOptions options)
         {
             var domain = ipEndPoint.AddressFamily == AddressFamily.InterNetwork ? AF_INET : AF_INET6;
-            LinuxSocket s = socket(domain, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP);
+            LinuxSocket s = new LinuxSocket(domain, SOCK_STREAM, IPPROTO_TCP, blocking: true);
             s.SetOption(SOL_SOCKET, SO_REUSEADDR, 1);
             s.SetOption(SOL_SOCKET, SO_REUSEPORT, 1);
             s.Bind(ipEndPoint);
@@ -145,10 +145,8 @@ namespace IoUring.Transport.Internals.Inbound
 
         public void Close(Ring ring)
         {
-            int socket = Socket;
-
-            close(socket); // TODO: replace close+NOP with close via io_uring in 5.6
-            ring.PrepareNop(AsyncOperation.CloseAcceptSocket(socket).AsUlong());
+            Socket.Close(); // TODO: replace close+NOP with close via io_uring in 5.6
+            ring.PrepareNop(AsyncOperation.CloseAcceptSocket(Socket).AsUlong());
         }
 
         public void CompleteClose()

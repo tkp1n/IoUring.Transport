@@ -59,7 +59,7 @@ namespace IoUring.Transport.Internals.Outbound
         public static OutboundConnection Connect(IPEndPoint endpoint, TaskCompletionSource<ConnectionContext> connectCompletion, MemoryPool<byte> memoryPool, IoUringOptions options, TransportThreadScheduler scheduler)
         {
             var domain = endpoint.AddressFamily == AddressFamily.InterNetwork ? AF_INET : AF_INET6;
-            LinuxSocket s = socket(domain, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, IPPROTO_TCP);
+            LinuxSocket s = new LinuxSocket(domain, SOCK_STREAM, IPPROTO_TCP, blocking: false);
             if (options.TcpNoDelay)
             {
                 s.SetOption(SOL_TCP, TCP_NODELAY, 1);

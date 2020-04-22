@@ -30,7 +30,7 @@
     </ItemGroup>
 
     <ItemGroup>
-      <PackageReference Include="IoUring" Version="0.1.0-*" />
+      <PackageReference Include="IoUring" Version="0.2.0-*" />
       <PackageReference Include="System.IO.Pipelines" Version="4.7.0" />
     </ItemGroup>
 

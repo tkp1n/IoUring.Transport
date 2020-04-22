@@ -91,8 +91,15 @@ namespace IoUring.Transport.Internals
 
         private void Close(Ring ring)
         {
-            Socket.Close(); // TODO: replace close+NOP with close via io_uring in 5.6
-            ring.PrepareNop(AsyncOperation.CloseConnection(Socket).AsUlong());
+            if (ring.Supports(RingOperation.Close))
+            {
+                ring.PrepareClose(Socket, AsyncOperation.CloseConnection(Socket).AsUlong());
+            }
+            else
+            {
+                Socket.Close(); // pre v5.6
+                ring.PrepareNop(AsyncOperation.CloseConnection(Socket).AsUlong());
+            }
         }
 
         public void CompleteClosed()

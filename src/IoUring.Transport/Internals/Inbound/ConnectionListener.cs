@@ -133,7 +133,7 @@ namespace IoUring.Transport.Internals.Inbound
                         break;
                 }
 
-                _acceptQueue.Writer.Complete();
+                _acceptQueue.Writer.TryComplete();
 
                 lock (Gate)
                 {
@@ -162,6 +162,7 @@ namespace IoUring.Transport.Internals.Inbound
 
             Debug.WriteLine($"Disposing ConnectionListener for {EndPoint}");
 
+            _acceptQueue.Writer.TryComplete();
             _transport.DecrementThreadRefCount();
 
             lock (Gate)

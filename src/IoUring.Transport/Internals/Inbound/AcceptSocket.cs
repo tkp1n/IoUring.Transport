@@ -100,7 +100,11 @@ namespace IoUring.Transport.Internals.Inbound
                 {
                     Debug.WriteLine($"Accepted for nothing on {Socket}");
 
-                    Accept(ring);
+                    if (!IsUnbinding) 
+                    {
+                        Accept(ring);
+                    }
+                    
                     return false;
                 }
 

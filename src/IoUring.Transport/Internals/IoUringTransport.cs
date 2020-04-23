@@ -92,6 +92,8 @@ namespace IoUring.Transport.Internals
                 acceptThread = _acceptThread;
             }
 
+            Debug.WriteLine("Disposing IoUringTransport");
+
             if (transportThreads != null)
             {
                 foreach (var transportThread in transportThreads)

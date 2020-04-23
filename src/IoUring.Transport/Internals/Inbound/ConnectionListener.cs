@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO.Pipelines;
 using System.Net;
 using System.Net.Sockets;
@@ -48,6 +49,8 @@ namespace IoUring.Transport.Internals.Inbound
                 _state = ConnectionListenerState.Binding;
             }
 
+            Debug.WriteLine($"Binding ConnectionListner for {EndPoint}");
+
             try
             {
                 _transport.IncrementThreadRefCount();
@@ -93,6 +96,8 @@ namespace IoUring.Transport.Internals.Inbound
                 if (_state != ConnectionListenerState.Bound) throw new InvalidOperationException();
             }
 
+            Debug.WriteLine($"Accepting on ConnectionListner for {EndPoint}");
+
             await foreach (var connection in _acceptQueue.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
             {
                 return connection;
@@ -109,6 +114,8 @@ namespace IoUring.Transport.Internals.Inbound
                 if (_state != ConnectionListenerState.Bound) throw new InvalidOperationException();
                 _state = ConnectionListenerState.Unbinding;
             }
+
+            Debug.WriteLine($"Unbinding ConnectionListner for {EndPoint}");
 
             try
             {
@@ -152,6 +159,8 @@ namespace IoUring.Transport.Internals.Inbound
 
                 _state = ConnectionListenerState.Disposing;
             }
+
+            Debug.WriteLine($"Disposing ConnectionListener for {EndPoint}");
 
             _transport.DecrementThreadRefCount();
 

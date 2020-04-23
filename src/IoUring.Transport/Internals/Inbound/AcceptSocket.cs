@@ -45,6 +45,7 @@ namespace IoUring.Transport.Internals.Inbound
 
         public static AcceptSocket Bind(IPEndPoint ipEndPoint, ChannelWriter<ConnectionContext> acceptQueue, IoUringOptions options)
         {
+            Debug.WriteLine($"Binding to {ipEndPoint}");
             var domain = ipEndPoint.AddressFamily == AddressFamily.InterNetwork ? AF_INET : AF_INET6;
             LinuxSocket s = new LinuxSocket(domain, SOCK_STREAM, IPPROTO_TCP, blocking: true);
             s.SetOption(SOL_SOCKET, SO_REUSEADDR, 1);
@@ -57,6 +58,7 @@ namespace IoUring.Transport.Internals.Inbound
 
         public static AcceptSocket Bind(UnixDomainSocketEndPoint unixDomainSocketEndPoint, ChannelWriter<ConnectionContext> acceptQueue, IoUringOptions options)
         {
+            Debug.WriteLine($"Binding to {unixDomainSocketEndPoint}");
             var socketPath = unixDomainSocketEndPoint.ToString();
             var s = new LinuxSocket(AF_UNIX, SOCK_STREAM, 0, blocking: false);
             File.Delete(socketPath);
@@ -68,6 +70,7 @@ namespace IoUring.Transport.Internals.Inbound
 
         public static AcceptSocket Bind(FileHandleEndPoint fileHandleEndPoint, ChannelWriter<ConnectionContext> acceptQueue, IoUringOptions options)
         {
+            Debug.WriteLine($"Binding to {fileHandleEndPoint}");
             return new AcceptSocket((int) fileHandleEndPoint.FileHandle, fileHandleEndPoint, acceptQueue, options);
         }
 
@@ -83,6 +86,7 @@ namespace IoUring.Transport.Internals.Inbound
         public void Accept(Ring ring)
         {
             int socket = Socket;
+            Debug.WriteLine($"Adding accept on {socket}");
             ring.PrepareAccept(socket, Addr, AddrLen, SOCK_NONBLOCK | SOCK_CLOEXEC, AsyncOperation.AcceptFrom(socket).AsUlong());
         }
 
@@ -94,7 +98,7 @@ namespace IoUring.Transport.Internals.Inbound
                 var err = -result;
                 if (err == EAGAIN || err == EINTR || err == EMFILE)
                 {
-                    Debug.WriteLine("accepted for nothing");
+                    Debug.WriteLine($"Accepted for nothing on {Socket}");
 
                     Accept(ring);
                     return false;
@@ -102,13 +106,14 @@ namespace IoUring.Transport.Internals.Inbound
 
                 if (err == ECANCELED && IsUnbinding)
                 {
+                    Debug.WriteLine("Accept cancelled while unbinding");
                     return false;
                 }
 
                 throw new ErrnoException(err);
             }
 
-            Debug.WriteLine($"Accepted {result}");
+            Debug.WriteLine($"Accepted {result} on {Socket}");
             socket = result;
             return true;
         }
@@ -140,6 +145,7 @@ namespace IoUring.Transport.Internals.Inbound
         {
             IsUnbinding = true;
             int socket = Socket;
+            Debug.WriteLine($"Adding async cancel on {socket} to unbind");
             ring.PrepareCancel(AsyncOperation.AcceptFrom(Socket).AsUlong(), AsyncOperation.CancelAccept(socket).AsUlong());
         }
 
@@ -147,23 +153,28 @@ namespace IoUring.Transport.Internals.Inbound
         {
             if (ring.Supports(RingOperation.Close))
             {
+                Debug.WriteLine($"Adding close on {Socket}");
                 ring.PrepareClose(Socket, AsyncOperation.CloseAcceptSocket(Socket).AsUlong());
             }
             else
             {
+                Debug.WriteLine($"Closing {Socket}");
                 Socket.Close(); // pre v5.6
+                Debug.WriteLine($"Adding nop on {Socket}");
                 ring.PrepareNop(AsyncOperation.CloseAcceptSocket(Socket).AsUlong());
             }
         }
 
         public void CompleteClose()
         {
+            Debug.WriteLine($"Close (unbind) completed for {Socket}");
             _unbindCompletion.TrySetResult(null);
             _ = DisposeAsync();
         }
 
         public ValueTask DisposeAsync()
         {
+            Debug.WriteLine($"Disposing {Socket}");
             if (_addrHandle.IsAllocated)
                 _addrHandle.Free();
             if (_addrLenHandle.IsAllocated)

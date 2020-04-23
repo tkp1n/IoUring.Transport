@@ -10,6 +10,7 @@ namespace IoUring.Transport.Internals
         public void ReadPoll(Ring ring)
         {
             int socket = Socket;
+            Debug.WriteLine($"Adding read poll on {Socket}");
             ring.PreparePollAdd(socket, (ushort) POLLIN, AsyncOperation.ReadPollFor(socket).AsUlong());
             SetFlag(ConnectionState.PollingRead);
         }

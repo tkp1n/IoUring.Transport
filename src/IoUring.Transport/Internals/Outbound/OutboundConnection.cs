@@ -78,6 +78,7 @@ namespace IoUring.Transport.Internals.Outbound
         public unsafe void Connect(Ring ring)
         {
             int socket = Socket;
+            Debug.WriteLine($"Connecting to {socket}");
             ring.PrepareConnect(socket, Addr, AddrLen, AsyncOperation.ConnectOn(socket).AsUlong());
         }
 
@@ -89,6 +90,7 @@ namespace IoUring.Transport.Internals.Outbound
             {
                 if (-result == EAGAIN && -result == EINTR)
                 {
+                    Debug.WriteLine($"Connected for nothing to {Socket}");
                     Connect(ring);
                     return;
                 }
@@ -97,6 +99,7 @@ namespace IoUring.Transport.Internals.Outbound
             }
             else
             {
+                Debug.WriteLine($"Connected to {Socket}");
                 LocalEndPoint = Socket.GetLocalAddress();
                 _connectCompletion.TrySetResult(this);
             }
@@ -106,6 +109,7 @@ namespace IoUring.Transport.Internals.Outbound
 
         public override async ValueTask DisposeAsync()
         {
+            Debug.WriteLine($"Disposing {Socket}");
             await base.DisposeAsync();
 
             if (_addrHandle.IsAllocated)

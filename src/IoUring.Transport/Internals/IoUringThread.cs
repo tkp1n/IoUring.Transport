@@ -1,5 +1,6 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -45,7 +46,7 @@ namespace IoUring.Transport.Internals
 
         public void Run()
         {
-            if (!_thread.ThreadState.HasFlag(ThreadState.Unstarted)) throw new InvalidOperationException();
+            if (!_thread.ThreadState.HasFlag(System.Threading.ThreadState.Unstarted)) throw new InvalidOperationException();
             _thread.Start(this);
         }
 
@@ -89,6 +90,7 @@ namespace IoUring.Transport.Internals
 
         public virtual async ValueTask DisposeAsync()
         {
+            Debug.WriteLine("Disposing IoUringThread");
             _disposed = true;
 
             await _threadCompletion.Task;

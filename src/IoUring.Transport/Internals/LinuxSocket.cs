@@ -125,5 +125,7 @@ namespace IoUring.Transport.Internals
 
         public static implicit operator LinuxSocket(int v) => new LinuxSocket(v);
         public static implicit operator int(LinuxSocket s) => s._fd;
+
+        public override string ToString() => ((int)_fd).ToString();
     }
 }

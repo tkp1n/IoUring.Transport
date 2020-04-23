@@ -2,6 +2,7 @@ using System;
 using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Net;
 using System.Threading.Channels;
 using System.Threading.Tasks;
@@ -41,6 +42,7 @@ namespace IoUring.Transport.Internals
 
         public void Bind(IPEndPoint endpoint, ChannelWriter<ConnectionContext> connectionSource)
         {
+            Debug.WriteLine($"Binding to new endpoint {endpoint}");
             var context = AcceptSocket.Bind(endpoint, connectionSource, _options);
             _acceptSocketsPerEndPoint[endpoint] = context;
             _scheduler.ScheduleAsyncBind(context.Socket, context);
@@ -50,6 +52,7 @@ namespace IoUring.Transport.Internals
         {
             if (_acceptSocketsPerEndPoint.Remove(endPoint, out var acceptSocket))
             {
+                Debug.WriteLine($"Unbinding from {endPoint}");
                 _scheduler.ScheduleAsyncUnbind(acceptSocket.Socket);
                 return new ValueTask(acceptSocket.UnbindCompletion);
             }

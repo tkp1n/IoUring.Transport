@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
@@ -92,6 +92,7 @@ namespace IoUring.Transport.Internals
         {
             Debug.WriteLine("Disposing IoUringThread");
             _disposed = true;
+            _unblockHandle.UnblockIfRequired();
 
             await _threadCompletion.Task;
             _thread.Join();

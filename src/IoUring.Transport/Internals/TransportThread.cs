@@ -196,5 +196,16 @@ namespace IoUring.Transport.Internals
             context.CompleteClosed();
         }
 
+        public override async ValueTask DisposeAsync()
+        {
+            Debug.WriteLine("Disposing TransportThread");
+
+            foreach (var (endpoint, _) in _acceptSocketsPerEndPoint)
+            {
+                await Unbind(endpoint);
+            }
+
+            await base.DisposeAsync();
+        }
     }
 }

@@ -1,5 +1,4 @@
-﻿using System.Net.Http;
-using System.Threading.Tasks;
+﻿using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 
 namespace IoUring.TestApp.Controllers
@@ -8,12 +7,10 @@ namespace IoUring.TestApp.Controllers
     [Route("[controller]")]
     public class RandomController : ControllerBase
     {
-        private readonly IHttpClientFactory _clientFactory;
         private readonly Task<string> t = Task.FromResult("Hello");
 
-        public RandomController(IHttpClientFactory clientFactory)
+        public RandomController()
         {
-            _clientFactory = clientFactory;
         }
 
         [HttpGet]

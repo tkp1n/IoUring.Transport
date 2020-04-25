@@ -56,13 +56,27 @@ namespace IoUring.Transport.Internals.Outbound
             Features.Set<IConnectionInherentKeepAliveFeature>(this);
         }
 
-        public static OutboundConnection Connect(IPEndPoint endpoint, TaskCompletionSource<ConnectionContext> connectCompletion, MemoryPool<byte> memoryPool, IoUringOptions options, TransportThreadScheduler scheduler)
+        public static OutboundConnection Create(EndPoint endpoint, TaskCompletionSource<ConnectionContext> connectCompletion, MemoryPool<byte> memoryPool, IoUringOptions options, TransportThreadScheduler scheduler)
         {
-            var domain = endpoint.AddressFamily == AddressFamily.InterNetwork ? AF_INET : AF_INET6;
-            LinuxSocket s = new LinuxSocket(domain, SOCK_STREAM, IPPROTO_TCP, blocking: false);
-            if (options.TcpNoDelay)
+            LinuxSocket s;
+            switch (endpoint)
             {
-                s.SetOption(SOL_TCP, TCP_NODELAY, 1);
+                case IPEndPoint iPEndPoint:
+                    var domain = endpoint.AddressFamily == AddressFamily.InterNetwork ? AF_INET : AF_INET6;
+                    s = new LinuxSocket(domain, SOCK_STREAM, IPPROTO_TCP, blocking: false);
+                    if (options.TcpNoDelay)
+                    {
+                        s.SetOption(SOL_TCP, TCP_NODELAY, 1);
+                    }
+                    break;
+                case UnixDomainSocketEndPoint unixDomainSocketEndPoint:
+                    s = new LinuxSocket(AF_UNIX, SOCK_STREAM, 0, blocking: false);
+                    break;
+                case FileHandleEndPoint fileHandleEndPoint:
+                    s = (int) fileHandleEndPoint.FileHandle;
+                    break;
+                default:
+                    throw new NotSupportedException("EndPoint type not supported: " + endpoint.GetType());
             }
 
             return new OutboundConnection(s, endpoint, memoryPool, options, scheduler, connectCompletion);

@@ -31,10 +31,10 @@ namespace IoUring.Transport.Internals
 
         public TransportThreadScheduler Scheduler => _scheduler;
 
-        public ValueTask<ConnectionContext> Connect(IPEndPoint endpoint)
+        public ValueTask<ConnectionContext> Connect(EndPoint endpoint)
         {
-            var tcs = new TaskCompletionSource<ConnectionContext>(TaskCreationOptions.RunContinuationsAsynchronously); // Ensure the transport thread doesn't run continuations
-            var context = OutboundConnection.Connect(endpoint, tcs, _memoryPool, _options, _scheduler);
+            var tcs = new TaskCompletionSource<ConnectionContext>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var context = OutboundConnection.Create(endpoint, tcs, _memoryPool, _options, _scheduler);
             _scheduler.ScheduleAsyncConnect(context.Socket, context);
 
             return new ValueTask<ConnectionContext>(tcs.Task);

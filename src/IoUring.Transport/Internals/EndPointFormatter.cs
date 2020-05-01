@@ -70,7 +70,7 @@ namespace IoUring.Transport.Internals
                 return new IPEndPoint(new IPAddress(bytes, addrIn->sin6_scope_id), port);
             }
 
-            throw new NotSupportedException();
+            throw new NotSupportedException($"Address family not supported: {addr->ss_family.ToString()}");
         }
 
         public static unsafe void ToSockAddr(this UnixDomainSocketEndPoint domainSocketEndPoint, sockaddr_un* addr)
@@ -82,13 +82,6 @@ namespace IoUring.Transport.Internals
             var length = Math.Min(bytes.Length, sockaddr_un.sun_path_length - 1);
             bytes.AsSpan(0, length).CopyTo(new Span<byte>(addr->sun_path, length));
             addr->sun_path[length] = 0;
-        }
-
-        public static unsafe UnixDomainSocketEndPoint AddrToUnixDomainSocketEndPoint(sockaddr_storage* addr)
-        {
-            sockaddr_un* addrUn = (sockaddr_un*)addr;
-            var path = Marshal.PtrToStringAnsi((IntPtr) addrUn->sun_path);
-            return new UnixDomainSocketEndPoint(path);
         }
     }
 }

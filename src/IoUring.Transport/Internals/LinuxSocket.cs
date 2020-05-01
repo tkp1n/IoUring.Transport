@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using Microsoft.AspNetCore.Connections;
@@ -33,6 +34,13 @@ namespace IoUring.Transport.Internals
         {
             var rv = setsockopt(_fd, level, option, (byte*) &value, 4);
             if (rv != 0) throw new ErrnoException(errno);
+        }
+
+        public unsafe void SetFlag(int flag)
+        {
+            int flags = fcntl(_fd, F_GETFL, 0);
+            if ((flags & flag) != 0) return;
+            fcntl(_fd, F_SETFL, flags | flag);
         }
 
         public unsafe void Bind(IPEndPoint endPoint)
@@ -82,11 +90,6 @@ namespace IoUring.Transport.Internals
                 return EndPointFormatter.AddrToIpEndPoint(&addr);
             }
 
-            if (addr.ss_family == AF_UNIX)
-            {
-                return EndPointFormatter.AddrToUnixDomainSocketEndPoint(&addr);
-            }
-
             return null;
         }
 
@@ -121,11 +124,44 @@ namespace IoUring.Transport.Internals
             if (rv == -1) throw new ErrnoException(error);
         }
 
+        public unsafe void TransferAndClose(LinuxSocket recipient)
+        {
+            byte dummyBuffer = 0;
+            iovec iov = default;
+            iov.iov_base = &dummyBuffer;
+            iov.iov_len = 1;
+
+            int controlLength = CMSG_SPACE(sizeof(int));
+            byte* control = stackalloc byte[controlLength];
+
+            msghdr header = default;
+            header.msg_iov = &iov;
+            header.msg_iovlen = 1;
+            header.msg_control = control;
+            header.msg_controllen = controlLength;
+
+            cmsghdr* cmsg = CMSG_FIRSTHDR(&header);
+            cmsg->cmsg_level = SOL_SOCKET;
+            cmsg->cmsg_type = SCM_RIGHTS;
+            cmsg->cmsg_len = CMSG_LEN(sizeof(int));
+            int *fdptr = (int*)CMSG_DATA(cmsg);
+            *fdptr = _fd;
+
+            ssize_t rv;
+            do
+            {
+                Debug.WriteLine($"Sending accepted socket {_fd} to {recipient}");
+                rv = sendmsg(recipient, &header, MSG_NOSIGNAL);
+            } while (rv < 0 && errno == EINTR);
+
+            Close();
+        }
+
         public void Close() => close(_fd);
 
         public static implicit operator LinuxSocket(int v) => new LinuxSocket(v);
         public static implicit operator int(LinuxSocket s) => s._fd;
 
-        public override string ToString() => ((int)_fd).ToString();
+        public override string ToString() => _fd.ToString();
     }
 }

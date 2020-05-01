@@ -1,6 +1,5 @@
 using System;
 using System.Diagnostics;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using IoUring.Transport.Internals.Inbound;
@@ -14,37 +13,30 @@ namespace IoUring.Transport.Internals
         private const int Disposed = -1;
 
         private object _lock = new object();
-        private TransportThread[] _transportThreads;
         private AcceptThread _acceptThread;
         private int _refCount;
+        private readonly IoUringOptions _options;
+        private readonly ILoggerFactory _loggerFactory;
 
         public IoUringTransport(IOptions<IoUringOptions> options, ILoggerFactory loggerFactory)
         {
-            Options = (options ?? throw new ArgumentNullException(nameof(options))).Value;
-            LoggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
+            _options = (options ?? throw new ArgumentNullException(nameof(options))).Value;
+            _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
 
             Limits.SetToMax(Resource.RLIMIT_NOFILE);
-        }
 
-        public IoUringOptions Options { get; }
-        public ILoggerFactory LoggerFactory { get; }
-        public TransportThread[] TransportThreads => LazyInitializer.EnsureInitialized(ref _transportThreads, ref _lock, () => CreateTransportThreads());
-
-        private TransportThread[] CreateTransportThreads()
-        {
-            Debug.Assert(Monitor.IsEntered(_lock));
-            if (_refCount == Disposed) throw new ObjectDisposedException(nameof(IoUringTransport));
-
-            var threads = new TransportThread[Options.ThreadCount];
+            var threads = new TransportThread[_options.ThreadCount];
             for (int i = 0; i < threads.Length; i++)
             {
-                var thread = new TransportThread(Options);
+                var thread = new TransportThread(_options);
                 thread.Run();
                 threads[i] = thread;
             }
 
-            return threads;
+            TransportThreads = threads;
         }
+
+        public TransportThread[] TransportThreads { get; private set; }
 
         public AcceptThread AcceptThread => LazyInitializer.EnsureInitialized(ref _acceptThread, ref _lock, () => CreateAcceptThread());
 
@@ -53,9 +45,7 @@ namespace IoUring.Transport.Internals
             Debug.Assert(Monitor.IsEntered(_lock));
             if (_refCount == Disposed) throw new ObjectDisposedException(nameof(IoUringTransport));
 
-            var schedulers = TransportThreads.Select(t => t.Scheduler).ToArray();
-
-            var thread = new AcceptThread(Options, schedulers);
+            var thread = new AcceptThread(_options, TransportThreads);
             thread.Run();
             return thread;
         }
@@ -88,8 +78,10 @@ namespace IoUring.Transport.Internals
                 if (_refCount == Disposed) return;
                 if ( _refCount != 0) throw new InvalidOperationException();
                 _refCount = Disposed;
-                transportThreads = _transportThreads;
+                transportThreads = TransportThreads;
+                TransportThreads = null;
                 acceptThread = _acceptThread;
+                _acceptThread = null;
             }
 
             Debug.WriteLine("Disposing IoUringTransport");
@@ -103,7 +95,7 @@ namespace IoUring.Transport.Internals
             }
 
             if (acceptThread != null)
-                await _acceptThread.DisposeAsync();
+                await acceptThread.DisposeAsync();
         }
     }
 }

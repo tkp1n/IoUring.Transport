@@ -68,5 +68,11 @@ namespace IoUring.Transport.Internals
             _asyncOperationQueue.Enqueue(AsyncOperation.UnbindFrom(socket));
             _unblockHandle.UnblockIfRequired();
         }
+
+        public void ScheduleAsyncPollReceive(int socket)
+        {
+            _asyncOperationQueue.Enqueue(AsyncOperation.RecvSocketPoll(socket));
+            _unblockHandle.UnblockIfRequired();
+        }
     }
 }

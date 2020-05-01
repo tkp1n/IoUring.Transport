@@ -29,7 +29,7 @@ namespace IoUring.Transport.Internals.Inbound
             EndPoint = endpoint;
         }
 
-        public EndPoint EndPoint { get; }
+        public EndPoint EndPoint { get; private set; }
 
         private object Gate => this;
 
@@ -49,7 +49,7 @@ namespace IoUring.Transport.Internals.Inbound
                 _state = ConnectionListenerState.Binding;
             }
 
-            Debug.WriteLine($"Binding ConnectionListner for {EndPoint}");
+            Debug.WriteLine($"Binding ConnectionListener for {EndPoint}");
 
             try
             {
@@ -59,17 +59,20 @@ namespace IoUring.Transport.Internals.Inbound
                 {
                     case IPEndPoint ipEndPoint when ipEndPoint.AddressFamily == AddressFamily.InterNetwork || ipEndPoint.AddressFamily == AddressFamily.InterNetworkV6:
                         var threads = _transport.TransportThreads;
+                        EndPoint boundEndPoint = endpoint;
                         foreach (var thread in threads)
                         {
-                            thread.Bind(ipEndPoint, _acceptQueue);
+                            boundEndPoint = thread.Bind(ipEndPoint, _acceptQueue);
                         }
+
+                        EndPoint = boundEndPoint;
 
                         break;
                     case UnixDomainSocketEndPoint unixDomainSocketEndPoint:
-                        _transport.AcceptThread.Bind(unixDomainSocketEndPoint, _acceptQueue);
+                        EndPoint = _transport.AcceptThread.Bind(unixDomainSocketEndPoint, _acceptQueue);
                         break;
                     case FileHandleEndPoint fileHandleEndPoint:
-                        _transport.AcceptThread.Bind(fileHandleEndPoint, _acceptQueue);
+                        EndPoint = _transport.AcceptThread.Bind(fileHandleEndPoint, _acceptQueue);
                         break;
                     default:
                         throw new NotSupportedException($"Unknown Endpoint {endpoint.GetType()}");

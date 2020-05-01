@@ -13,9 +13,9 @@ namespace IoUring.Transport.Internals.Inbound
             _asyncOperationQueue = asyncOperationQueue;
         }
 
-        public void ScheduleAsyncAccept(int socket)
+        public void ScheduleAsyncAcceptPoll(int socket)
         {
-            _asyncOperationQueue.Enqueue(AsyncOperation.AcceptFrom(socket));
+            _asyncOperationQueue.Enqueue(AsyncOperation.PollAcceptFrom(socket));
             _unblockHandle.UnblockIfRequired();
         }
 

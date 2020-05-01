@@ -63,6 +63,8 @@ namespace IoUring.Transport.Internals
                 Complete();
             }
 
+            Debug.WriteLine($"{Thread.CurrentThread.Name} is done");
+
             _threadCompletion.TrySetResult(null);
         }
 
@@ -77,6 +79,7 @@ namespace IoUring.Transport.Internals
                     return LoopState.WillBlock;
                 }
                 minComplete = 1;
+                Debug.WriteLine($"{Thread.CurrentThread.Name} is going to block");
             }
             else
             {
@@ -84,6 +87,7 @@ namespace IoUring.Transport.Internals
             }
 
             _ring.SubmitAndWait(minComplete, out _);
+            Debug.WriteLine($"{Thread.CurrentThread.Name} is unblocked");
             _unblockHandle.NotifyTransitionToUnblocked();
             return LoopState.Running;
         }

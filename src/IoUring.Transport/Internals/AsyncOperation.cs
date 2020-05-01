@@ -1,4 +1,5 @@
-﻿using System.Runtime.CompilerServices;
+﻿using System.Reflection.Metadata;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace IoUring.Transport
@@ -13,6 +14,7 @@ namespace IoUring.Transport
         EventFdRead,
         Connect,
         Bind,
+        AcceptPoll,
         Accept,
         CompleteInbound,
         CompleteOutbound,
@@ -22,7 +24,8 @@ namespace IoUring.Transport
         CloseConnection,
         CloseAcceptSocket,
         Unbind,
-        Transfer
+        RecvSocketPoll,
+        RecvSocket
     }
 
     [StructLayout(LayoutKind.Explicit)]
@@ -64,6 +67,7 @@ namespace IoUring.Transport
         public static AsyncOperation ReadEventFd(int eventFd) => new AsyncOperation(eventFd, OperationType.EventFdRead);
         public static AsyncOperation ConnectOn(int fd) => new AsyncOperation(fd, OperationType.Connect);
         public static AsyncOperation BindTo(int fd) => new AsyncOperation(fd, OperationType.Bind);
+        public static AsyncOperation PollAcceptFrom(int fd) => new AsyncOperation(fd, OperationType.AcceptPoll);
         public static AsyncOperation AcceptFrom(int fd) => new AsyncOperation(fd, OperationType.Accept);
         public static AsyncOperation CompleteInboundOf(int fd) => new AsyncOperation(fd, OperationType.CompleteInbound);
         public static AsyncOperation CompleteOutboundOf(int fd) => new AsyncOperation(fd, OperationType.CompleteOutbound);
@@ -73,6 +77,7 @@ namespace IoUring.Transport
         public static AsyncOperation UnbindFrom(int fd) => new AsyncOperation(fd, OperationType.Unbind);
         public static AsyncOperation CloseConnection(int fd) => new AsyncOperation(fd, OperationType.CloseConnection);
         public static AsyncOperation CloseAcceptSocket(int fd) => new AsyncOperation(fd, OperationType.CloseAcceptSocket);
-        public static AsyncOperation Transfer() => new AsyncOperation(0, OperationType.Transfer);
+        public static AsyncOperation RecvSocketPoll(int fd) => new AsyncOperation(fd, OperationType.RecvSocketPoll);
+        public static AsyncOperation RecvSocket(int fd) => new AsyncOperation(fd, OperationType.RecvSocket);
     }
 }

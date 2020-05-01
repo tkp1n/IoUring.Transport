@@ -5,7 +5,6 @@ using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
-using System.Runtime.InteropServices;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Connections;
@@ -14,36 +13,34 @@ using static Tmds.Linux.LibC;
 
 namespace IoUring.Transport.Internals.Inbound
 {
-    internal sealed unsafe class AcceptSocket : IAsyncDisposable
+    internal sealed unsafe class AcceptSocket
     {
         private readonly TaskCompletionSource<object> _unbindCompletion;
+        private readonly MemoryPool<byte> _memoryPool;
         private readonly IoUringOptions _options;
-        private GCHandle _addrHandle;
-        private GCHandle _addrLenHandle;
+        private readonly TransportThreadScheduler _scheduler;
+        private readonly byte[] _addr;
+        private readonly byte[] _addrLen;
 
-        private AcceptSocket(LinuxSocket socket, EndPoint endPoint, ChannelWriter<ConnectionContext> acceptQueue, IoUringOptions options)
+        private AcceptSocket(LinuxSocket socket, EndPoint endPoint, ChannelWriter<ConnectionContext> acceptQueue, MemoryPool<byte> memoryPool, IoUringOptions options, TransportThreadScheduler scheduler)
         {
             Socket = socket;
             EndPoint = endPoint;
             AcceptQueue = acceptQueue;
+            _memoryPool = memoryPool;
             _options = options;
+            _scheduler = scheduler;
 
             _unbindCompletion = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
-            if (endPoint is IPEndPoint) // Addr is null by intention for the remaining EndPoint types
+            if (endPoint is IPEndPoint) // _addr is null by intention for the remaining EndPoint types
             {
-                sockaddr_storage storage = default;
-                var addrHandle = GCHandle.Alloc(storage, GCHandleType.Pinned);
-                Addr = (sockaddr*) addrHandle.AddrOfPinnedObject();
-                _addrHandle = addrHandle;
-
-                socklen_t addrLen = SizeOf.sockaddr_storage;
-                var addrLenHandle = GCHandle.Alloc(addrLen, GCHandleType.Pinned);
-                AddrLen = (socklen_t*) addrLenHandle.AddrOfPinnedObject();
-                _addrLenHandle = addrLenHandle;
+                _addr = GC.AllocateUninitializedArray<byte>(SizeOf.sockaddr_storage, pinned: true);
+                _addrLen = GC.AllocateUninitializedArray<byte>(SizeOf.socklen_t, pinned: true);
             }
         }
 
-        public static AcceptSocket Bind(IPEndPoint ipEndPoint, ChannelWriter<ConnectionContext> acceptQueue, IoUringOptions options)
+        public static AcceptSocket Bind(IPEndPoint ipEndPoint, ChannelWriter<ConnectionContext> acceptQueue,
+            MemoryPool<byte> memoryPool, IoUringOptions options, TransportThreadScheduler scheduler)
         {
             Debug.WriteLine($"Binding to {ipEndPoint}");
             var domain = ipEndPoint.AddressFamily == AddressFamily.InterNetwork ? AF_INET : AF_INET6;
@@ -53,7 +50,7 @@ namespace IoUring.Transport.Internals.Inbound
             s.Bind(ipEndPoint);
             s.Listen(options.ListenBacklog);
 
-            return new AcceptSocket(s, ipEndPoint, acceptQueue, options);
+            return new AcceptSocket(s, s.GetLocalAddress(), acceptQueue, memoryPool, options, scheduler);
         }
 
         public static AcceptSocket Bind(UnixDomainSocketEndPoint unixDomainSocketEndPoint, ChannelWriter<ConnectionContext> acceptQueue, IoUringOptions options)
@@ -65,32 +62,75 @@ namespace IoUring.Transport.Internals.Inbound
             s.Bind(unixDomainSocketEndPoint);
             s.Listen(options.ListenBacklog);
 
-            return new AcceptSocket(s, unixDomainSocketEndPoint, acceptQueue, options);
+            return new AcceptSocket(s, unixDomainSocketEndPoint, acceptQueue, null, options, null);
         }
 
         public static AcceptSocket Bind(FileHandleEndPoint fileHandleEndPoint, ChannelWriter<ConnectionContext> acceptQueue, IoUringOptions options)
         {
             Debug.WriteLine($"Binding to {fileHandleEndPoint}");
-            return new AcceptSocket((int) fileHandleEndPoint.FileHandle, fileHandleEndPoint, acceptQueue, options);
+            LinuxSocket s = (int) fileHandleEndPoint.FileHandle;
+            var endPoint = s.GetLocalAddress();
+            return new AcceptSocket(s, endPoint ?? fileHandleEndPoint, acceptQueue, null, options, null);
         }
 
         public LinuxSocket Socket { get; }
         public EndPoint EndPoint { get; }
         public ChannelWriter<ConnectionContext> AcceptQueue { get; }
-        public sockaddr* Addr { get; }
-        public socklen_t* AddrLen { get; }
-        public bool IsIpSocket => Addr == null;
-        public bool IsUnbinding { get; set; }
         public Task UnbindCompletion => _unbindCompletion.Task;
+        public LinuxSocket[] Handlers { get; set; }
+        private sockaddr* Addr => IsIpSocket ? (sockaddr*) MemoryHelper.UnsafeGetAddressOfPinnedArrayData(_addr) : (sockaddr*) 0;
+        private socklen_t* AddrLen => IsIpSocket ? (socklen_t*) MemoryHelper.UnsafeGetAddressOfPinnedArrayData(_addrLen) : (socklen_t*) 0;
+        private bool IsIpSocket => _addr != null;
+        private bool IsUnbinding { get; set; }
+
+        public void AcceptPoll(Ring ring)
+        {
+            int socket = Socket;
+            Debug.WriteLine($"Polling for accept on {socket}");
+            ring.PreparePollAdd(socket, (ushort) POLLIN, AsyncOperation.PollAcceptFrom(socket).AsUlong());
+        }
+
+        public void CompleteAcceptPoll(Ring ring, int result)
+        {
+            if (result >= 0)
+            {
+                Debug.WriteLine($"Completed accept poll on {(int)Socket}");
+                Accept(ring);
+            }
+            else
+            {
+                var err = -result;
+                if (err == EAGAIN || err == EWOULDBLOCK || err == EINTR)
+                {
+                    Debug.WriteLine("Polled accept for nothing");
+
+                    if (!IsUnbinding)
+                    {
+                        AcceptPoll(ring);
+                    }
+                }
+                else if (err == ECANCELED && IsUnbinding)
+                {
+                    Debug.WriteLine("Accept cancelled while unbinding");
+                }
+            }
+        }
 
         public void Accept(Ring ring)
         {
             int socket = Socket;
             Debug.WriteLine($"Adding accept on {socket}");
+
+            if (IsIpSocket)
+            {
+                _addr.AsSpan().Clear();
+                *AddrLen = SizeOf.sockaddr_storage;
+            }
+
             ring.PrepareAccept(socket, Addr, AddrLen, SOCK_NONBLOCK | SOCK_CLOEXEC, AsyncOperation.AcceptFrom(socket).AsUlong());
         }
 
-        public bool TryCompleteAccept(Ring ring, int result, out LinuxSocket socket)
+        public bool TryCompleteAcceptSocket(Ring ring, int result, out LinuxSocket socket)
         {
             socket = default;
             if (result < 0)
@@ -100,11 +140,11 @@ namespace IoUring.Transport.Internals.Inbound
                 {
                     Debug.WriteLine($"Accepted for nothing on {Socket}");
 
-                    if (!IsUnbinding) 
+                    if (!IsUnbinding)
                     {
                         Accept(ring);
                     }
-                    
+
                     return false;
                 }
 
@@ -122,15 +162,15 @@ namespace IoUring.Transport.Internals.Inbound
             return true;
         }
 
-        public bool TryCompleteAccept(Ring ring, int result, MemoryPool<byte> memoryPool, TransportThreadScheduler scheduler, [NotNullWhen(true)] out InboundConnection connection)
+        public bool TryCompleteAccept(Ring ring, int result, [NotNullWhen(true)] out InboundConnection connection)
         {
             connection = default;
-            if (!TryCompleteAccept(ring, result, out LinuxSocket socket))
+            if (!TryCompleteAcceptSocket(ring, result, out var socket))
             {
                 return false;
             }
 
-            IPEndPoint remoteEndPoint = null;
+            EndPoint remoteEndPoint = null;
             if (IsIpSocket)
             {
                 if (_options.TcpNoDelay)
@@ -141,7 +181,7 @@ namespace IoUring.Transport.Internals.Inbound
                 remoteEndPoint = EndPointFormatter.AddrToIpEndPoint((sockaddr_storage*) Addr);
             }
 
-            connection = new InboundConnection(socket, EndPoint, remoteEndPoint, memoryPool, _options, scheduler);
+            connection = new InboundConnection(socket, EndPoint, remoteEndPoint, _memoryPool, _options, _scheduler);
             return true;
         }
 
@@ -173,18 +213,6 @@ namespace IoUring.Transport.Internals.Inbound
         {
             Debug.WriteLine($"Close (unbind) completed for {Socket}");
             _unbindCompletion.TrySetResult(null);
-            _ = DisposeAsync();
-        }
-
-        public ValueTask DisposeAsync()
-        {
-            Debug.WriteLine($"Disposing {Socket}");
-            if (_addrHandle.IsAllocated)
-                _addrHandle.Free();
-            if (_addrLenHandle.IsAllocated)
-                _addrLenHandle.Free();
-
-            return default;
         }
     }
 }

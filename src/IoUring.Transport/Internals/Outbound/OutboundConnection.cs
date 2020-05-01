@@ -114,7 +114,9 @@ namespace IoUring.Transport.Internals.Outbound
             else
             {
                 Debug.WriteLine($"Connected to {Socket}");
-                LocalEndPoint = Socket.GetLocalAddress();
+                var ep = Socket.GetLocalAddress();
+                LocalEndPoint = ep ?? RemoteEndPoint;
+
                 _connectCompletion.TrySetResult(this);
             }
 

@@ -3,7 +3,6 @@ using System.Buffers;
 using System.IO.Pipelines;
 using System.Net;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Connections;
@@ -74,7 +73,7 @@ namespace IoUring.Transport.Internals
             _onOnFlushedToApp = () => HandleFlushedToApp();
             _onReadFromApp = () => HandleReadFromApp();
 
-            _ioVecBytes = new byte[SizeOf.iovec * (ReadIOVecCount + WriteIOVecCount)];
+            _ioVecBytes = GC.AllocateUninitializedArray<byte>(SizeOf.iovec * (ReadIOVecCount + WriteIOVecCount));
             unsafe
             {
                 _iovec = (iovec*) MemoryHelper.UnsafeGetAddressOfPinnedArrayData(_ioVecBytes);

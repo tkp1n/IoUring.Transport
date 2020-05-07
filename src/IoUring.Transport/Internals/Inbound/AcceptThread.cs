@@ -72,16 +72,17 @@ namespace IoUring.Transport.Internals.Inbound
 
         protected override void RunAsyncOperations()
         {
+            var ring = _ring;
             while (_asyncOperationQueue.TryDequeue(out var operation))
             {
                 var (socket, operationType) = operation;
                 switch (operationType)
                 {
                     case OperationType.AcceptPoll:
-                        _acceptSockets[socket].AcceptPoll(_ring);
+                        _acceptSockets[socket].AcceptPoll(ring);
                         break;
                     case OperationType.Unbind:
-                        _acceptSockets[socket].Unbid(_ring);
+                        _acceptSockets[socket].Unbid(ring);
                         break;
                 }
             }
@@ -89,7 +90,8 @@ namespace IoUring.Transport.Internals.Inbound
 
         protected override void Complete()
         {
-            while(_ring.TryRead(out Completion c))
+            var ring = _ring;
+            while(ring.TryRead(out Completion c))
             {
                 var (socket, operationType) = AsyncOperation.FromUlong(c.userData);
                 switch (operationType)
@@ -99,13 +101,13 @@ namespace IoUring.Transport.Internals.Inbound
                         _unblockHandle.HandleEventFdCompletion(operationType, c.result);
                         continue;
                     case OperationType.AcceptPoll:
-                        _acceptSockets[socket].CompleteAcceptPoll(_ring, c.result);
+                        _acceptSockets[socket].CompleteAcceptPoll(ring, c.result);
                         continue;
                     case OperationType.Accept:
                         CompleteAccept(socket, c.result);
                         continue;
                     case OperationType.CancelAccept:
-                        _acceptSockets[socket].Close(_ring);
+                        _acceptSockets[socket].Close(ring);
                         continue;
                     case OperationType.CloseAcceptSocket:
                         CompleteCloseAcceptSocket(socket);
@@ -116,14 +118,15 @@ namespace IoUring.Transport.Internals.Inbound
 
         private void CompleteAccept(int socket, int result)
         {
+            var ring = _ring;
             if (!_acceptSockets.TryGetValue(socket, out var acceptSocket)) return; // socket already closed
-            if (acceptSocket.TryCompleteAcceptSocket(_ring, result, out var acceptedSocket))
+            if (acceptSocket.TryCompleteAcceptSocket(ring, result, out var acceptedSocket))
             {
                 var handlers = acceptSocket.Handlers;
                 var idx = (_schedulerIndex++) % handlers.Length;
                 acceptedSocket.TransferAndClose(handlers[idx]);
 
-                acceptSocket.AcceptPoll(_ring);
+                acceptSocket.AcceptPoll(ring);
             }
         }
 

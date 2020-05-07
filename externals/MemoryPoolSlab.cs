@@ -11,12 +11,18 @@ namespace System.Buffers
     /// </summary>
     internal class MemoryPoolSlab : IDisposable
     {
+        /// <summary>
+        /// This handle pins the managed array in memory until the slab is disposed. This prevents it from being
+        /// relocated and enables any subsections of the array to be used as native memory pointers to P/Invoked API calls.
+        /// </summary>
+        private GCHandle _gcHandle;
         private bool _isDisposed;
 
-        public MemoryPoolSlab(int length)
+        public MemoryPoolSlab(byte[] data)
         {
-            Array = GC.AllocateArray<byte>(length, pinned: true);
-            NativePointer = Marshal.UnsafeAddrOfPinnedArrayElement(Array, 0);
+            Array = data;
+            _gcHandle = GCHandle.Alloc(data, GCHandleType.Pinned);
+            NativePointer = _gcHandle.AddrOfPinnedObject();
         }
 
         /// <summary>
@@ -33,6 +39,15 @@ namespace System.Buffers
 
         public byte[] Array { get; private set; }
 
+        public static MemoryPoolSlab Create(int length)
+        {
+            // allocate and pin requested memory length
+            var array = new byte[length];
+
+            // allocate and return slab tracking object
+            return new MemoryPoolSlab(array);
+        }
+
         protected void Dispose(bool disposing)
         {
             if (_isDisposed)
@@ -41,8 +56,14 @@ namespace System.Buffers
             }
 
             _isDisposed = true;
+
             Array = null;
-            NativePointer = IntPtr.Zero;
+            NativePointer = IntPtr.Zero;;
+
+            if (_gcHandle.IsAllocated)
+            {
+                _gcHandle.Free();
+            }
         }
 
         ~MemoryPoolSlab()

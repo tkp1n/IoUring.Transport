@@ -124,6 +124,30 @@ namespace IoUring.Transport.Internals
             if (rv == -1) throw new ErrnoException(error);
         }
 
+        public unsafe int SendMsg(msghdr* msg, int flags)
+        {
+            int rv;
+            int error = 0;
+            do
+            {
+                rv = (int) sendmsg(_fd, msg, flags);
+            } while (rv == -1 && (error = errno) == EINTR);
+
+            return rv == -1 ? -error : rv;
+        }
+
+        public unsafe int RecvMsg(msghdr* msg, int flags)
+        {
+            int rv;
+            int error = 0;
+            do
+            {
+                rv = (int) recvmsg(_fd, msg, flags);
+            } while (rv == -1 && (error = errno) == EINTR);
+
+            return rv == -1 ? -error : rv;
+        }
+
         public unsafe void TransferAndClose(LinuxSocket recipient)
         {
             byte dummyBuffer = 0;
@@ -147,13 +171,8 @@ namespace IoUring.Transport.Internals
             int *fdptr = (int*)CMSG_DATA(cmsg);
             *fdptr = _fd;
 
-            ssize_t rv;
-            do
-            {
-                Debug.WriteLine($"Sending accepted socket {_fd} to {recipient}");
-                rv = sendmsg(recipient, &header, MSG_NOSIGNAL);
-            } while (rv < 0 && errno == EINTR);
-
+            Debug.WriteLine($"Sending accepted socket {_fd} to {recipient}");
+            recipient.SendMsg(&header, MSG_NOSIGNAL);
             Close();
         }
 

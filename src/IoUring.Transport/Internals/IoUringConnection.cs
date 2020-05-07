@@ -39,8 +39,8 @@ namespace IoUring.Transport.Internals
 
         private readonly TransportThreadScheduler _scheduler;
 
+        private readonly byte[] _ioVecBytes;
         private readonly unsafe iovec* _iovec;
-        private GCHandle _iovecHandle;
 
         private ValueTaskAwaiter<FlushResult> _flushResultAwaiter;
         private ValueTaskAwaiter<ReadResult> _readResultAwaiter;
@@ -74,10 +74,11 @@ namespace IoUring.Transport.Internals
             _onOnFlushedToApp = () => HandleFlushedToApp();
             _onReadFromApp = () => HandleReadFromApp();
 
-            iovec[] vecs = new iovec[ReadIOVecCount + WriteIOVecCount];
-            var vecsHandle = GCHandle.Alloc(vecs, GCHandleType.Pinned);
-            unsafe { _iovec = (iovec*) vecsHandle.AddrOfPinnedObject(); }
-            _iovecHandle = vecsHandle;
+            _ioVecBytes = new byte[SizeOf.iovec * (ReadIOVecCount + WriteIOVecCount)];
+            unsafe
+            {
+                _iovec = (iovec*) MemoryHelper.UnsafeGetAddressOfPinnedArrayData(_ioVecBytes);
+            }
         }
 
         public LinuxSocket Socket { get; }

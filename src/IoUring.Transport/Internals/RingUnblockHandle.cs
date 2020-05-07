@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Threading;
 using Tmds.Linux;
 using static Tmds.Linux.LibC;
@@ -15,9 +14,8 @@ namespace IoUring.Transport.Internals
 
         private readonly Ring _ring;
         private readonly LinuxSocket _eventfd;
-        private readonly iovec* _eventfdIoVec;
-        private GCHandle _eventfdBytes; // mutable struct, do not make this readonly
-        private GCHandle _eventfdIoVecHandle; // mutable struct, do not make this readonly
+        private readonly byte[] _eventfdBytes = GC.AllocateUninitializedArray<byte>(8, pinned: true);
+        private readonly byte[] _eventfdIoVecBytes = GC.AllocateUninitializedArray<byte>(SizeOf.iovec, pinned: true);
         private int _blockingMode;
 
         public RingUnblockHandle(Ring ring)
@@ -28,19 +26,13 @@ namespace IoUring.Transport.Internals
             if (res == -1) throw new ErrnoException(errno);
             _eventfd = res;
 
-            // Pin buffer for eventfd reads via io_uring
-            byte[] bytes = new byte[8];
-            _eventfdBytes = GCHandle.Alloc(bytes, GCHandleType.Pinned);
-
-            // Pin iovec used for eventfd reads via io_uring
-            var eventfdIoVec = new iovec
-            {
-                iov_base = (void*) _eventfdBytes.AddrOfPinnedObject(),
-                iov_len = bytes.Length
-            };
-            _eventfdIoVecHandle = GCHandle.Alloc(eventfdIoVec, GCHandleType.Pinned);
-            _eventfdIoVec = (iovec*) _eventfdIoVecHandle.AddrOfPinnedObject();
+            IoVec->iov_base = Buffer;
+            IoVec->iov_len = BufferLen;
         }
+
+        private iovec* IoVec => (iovec*) MemoryHelper.UnsafeGetAddressOfPinnedArrayData(_eventfdIoVecBytes);
+        private void* Buffer => MemoryHelper.UnsafeGetAddressOfPinnedArrayData(_eventfdBytes);
+        private int BufferLen => _eventfdBytes.Length;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void NotifyTransitionToBlockedAfterDoubleCheck()
@@ -63,7 +55,7 @@ namespace IoUring.Transport.Internals
         {
             Debug.WriteLine("Adding read on eventfd");
             int fd = _eventfd;
-            _ring.PrepareReadV(fd, _eventfdIoVec, 1, userData: AsyncOperation.ReadEventFd(fd).AsUlong());
+            _ring.PrepareReadV(fd, IoVec, 1, userData: AsyncOperation.ReadEventFd(fd).AsUlong());
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -142,12 +134,7 @@ namespace IoUring.Transport.Internals
 
         public void Dispose()
         {
-            if (_eventfdBytes.IsAllocated)
-            {
-                close(_eventfd);
-                _eventfdBytes.Free();
-                _eventfdIoVecHandle.Free();
-            }
+            close(_eventfd);
         }
     }
 }

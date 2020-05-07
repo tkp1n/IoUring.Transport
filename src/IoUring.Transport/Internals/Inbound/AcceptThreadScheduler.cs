@@ -2,7 +2,7 @@
 
 namespace IoUring.Transport.Internals.Inbound
 {
-    internal class AcceptThreadScheduler
+    internal sealed class AcceptThreadScheduler
     {
         private readonly RingUnblockHandle _unblockHandle;
         private readonly ConcurrentQueue<AsyncOperation> _asyncOperationQueue;

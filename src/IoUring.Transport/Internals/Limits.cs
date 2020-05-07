@@ -8,7 +8,7 @@ namespace IoUring.Transport.Internals
         RLIMIT_NOFILE = 7
     }
 
-    internal class Limits
+    internal static class Limits
     {
         private const string LibC = "libc.so.6";
 

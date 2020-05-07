@@ -111,7 +111,7 @@ namespace IoUring.Transport.Internals
         private static bool HasFlag(ConnectionState flag, ConnectionState test) => (flag & test) != 0;
         private static ConnectionState SetFlag(ConnectionState flag, ConnectionState newFlag) => flag | newFlag;
 
-        internal class DuplexPipe : IDuplexPipe
+        internal sealed class DuplexPipe : IDuplexPipe
         {
             public DuplexPipe(PipeReader reader, PipeWriter writer)
             {

@@ -6,8 +6,6 @@ using System.Threading.Tasks;
 using Xunit;
 using IoUring.Transport.Internals;
 using Microsoft.Extensions.Options;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using IoUring.Transport.Internals.Outbound;
 using System.IO.Pipelines;
 using System.Collections.Generic;

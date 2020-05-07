@@ -153,7 +153,7 @@ namespace IoUring.Transport.Internals.Inbound
                     return false;
                 }
 
-                throw new ErrnoException(err);
+                ThrowHelper.ThrowNewErrnoException(err);
             }
 
             Debug.WriteLine($"Accepted {result} on {Socket}");

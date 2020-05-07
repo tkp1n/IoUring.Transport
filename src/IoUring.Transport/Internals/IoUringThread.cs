@@ -46,7 +46,7 @@ namespace IoUring.Transport.Internals
 
         public void Run()
         {
-            if (!_thread.ThreadState.HasFlag(System.Threading.ThreadState.Unstarted)) throw new InvalidOperationException();
+            if (!_thread.ThreadState.HasFlag(System.Threading.ThreadState.Unstarted)) ThrowHelper.ThrowNewInvalidOperationException();
             _thread.Start(this);
         }
 

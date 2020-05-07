@@ -63,7 +63,7 @@ namespace IoUring.Transport.Internals.Inbound
                 }
                 else
                 {
-                    throw new ErrnoException(err);
+                    ThrowHelper.ThrowNewErrnoException(err);
                 }
             }
         }
@@ -172,7 +172,7 @@ namespace IoUring.Transport.Internals.Inbound
             }
             else
             {
-                throw new ErrnoException(err);
+                ThrowHelper.ThrowNewErrnoException(err);
             }
 
             return false;

@@ -18,7 +18,7 @@ namespace IoUring.Transport.Internals
             int rv = socketpair(domain, type, protocol, sv);
             if (rv != 0)
             {
-                throw new ErrnoException(errno);
+                ThrowHelper.ThrowNewErrnoException();
             }
 
             Socket1 = sv[0];

@@ -47,7 +47,7 @@ namespace IoUring.Transport.Internals.Outbound
 
         public static OutboundConnection Create(EndPoint endpoint, TaskCompletionSource<ConnectionContext> connectCompletion, MemoryPool<byte> memoryPool, IoUringOptions options, TransportThreadScheduler scheduler)
         {
-            LinuxSocket s;
+            LinuxSocket s = default;
             switch (endpoint)
             {
                 case IPEndPoint _:
@@ -65,7 +65,8 @@ namespace IoUring.Transport.Internals.Outbound
                     s = (int) fileHandleEndPoint.FileHandle;
                     break;
                 default:
-                    throw new NotSupportedException("EndPoint type not supported: " + endpoint.GetType());
+                    ThrowHelper.ThrowNewNotSupportedException_EndPointNotSupported();
+                    break;
             }
 
             return new OutboundConnection(s, endpoint, memoryPool, options, scheduler, connectCompletion);

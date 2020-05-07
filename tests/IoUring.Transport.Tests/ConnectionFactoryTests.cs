@@ -46,12 +46,7 @@ namespace IoUring.Transport.Tests
         {
             using var server = new EchoServer(endpoint, OutputHelper);
 
-            var logger = new ServiceCollection()
-                .AddLogging()
-                .BuildServiceProvider()
-                .GetService<ILoggerFactory>();
-
-            var transport = new IoUringTransport(Options.Create(new IoUringOptions()), logger);
+            var transport = new IoUringTransport(Options.Create(new IoUringOptions()));
             var connectionFactory = new ConnectionFactory(transport);
 
             try

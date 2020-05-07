@@ -25,7 +25,7 @@ namespace IoUring.Transport.Internals
             }
 
             var fd = socket(domain, type, protocol);
-            if (fd < 0) throw new ErrnoException(errno);
+            if (fd < 0) ThrowHelper.ThrowNewErrnoException();
 
             _fd = fd;
         }
@@ -33,7 +33,7 @@ namespace IoUring.Transport.Internals
         public unsafe void SetOption(int level, int option, int value)
         {
             var rv = setsockopt(_fd, level, option, (byte*) &value, 4);
-            if (rv != 0) throw new ErrnoException(errno);
+            if (rv != 0) ThrowHelper.ThrowNewErrnoException();
         }
 
         public unsafe void SetFlag(int flag)
@@ -53,15 +53,15 @@ namespace IoUring.Transport.Internals
                 var error = errno;
                 if (error == EADDRINUSE)
                 {
-                    throw new AddressInUseException("Address in use.");
+                    ThrowHelper.ThrowNewAddressInUseException();
                 }
 
                 if (error == EADDRNOTAVAIL)
                 {
-                    throw new AddressNotAvailableException("Address not available.");
+                    ThrowHelper.ThrowNewAddressNotAvailableException();
                 }
 
-                throw new ErrnoException(errno);
+                ThrowHelper.ThrowNewErrnoException(error);
             }
         }
 
@@ -71,20 +71,20 @@ namespace IoUring.Transport.Internals
             endPoint.ToSockAddr(&addr);
             var rv = bind(_fd, (sockaddr*)&addr, SizeOf.sockaddr_un);
 
-            if (rv < 0) throw new ErrnoException(errno);
+            if (rv < 0) ThrowHelper.ThrowNewErrnoException();
         }
 
         public void Listen(int backlog)
         {
             var rv = listen(_fd, backlog);
-            if (rv < 0) throw new ErrnoException(errno);
+            if (rv < 0) ThrowHelper.ThrowNewErrnoException();
         }
 
         public unsafe EndPoint GetLocalAddress()
         {
             sockaddr_storage addr;
             socklen_t length = SizeOf.sockaddr_storage;
-            if (getsockname(_fd, (sockaddr*) &addr, &length) != 0) throw new ErrnoException(errno);
+            if (getsockname(_fd, (sockaddr*) &addr, &length) != 0) ThrowHelper.ThrowNewErrnoException();
             if (addr.ss_family == AF_INET || addr.ss_family == AF_INET6)
             {
                 return EndPointFormatter.AddrToIpEndPoint(&addr);
@@ -97,7 +97,7 @@ namespace IoUring.Transport.Internals
         {
             sockaddr_storage addr;
             socklen_t length = SizeOf.sockaddr_storage;
-            if (getpeername(_fd, (sockaddr*) &addr, &length) != 0) throw new ErrnoException(errno);
+            if (getpeername(_fd, (sockaddr*) &addr, &length) != 0) ThrowHelper.ThrowNewErrnoException();
             return EndPointFormatter.AddrToIpEndPoint(&addr);
         }
 
@@ -107,7 +107,7 @@ namespace IoUring.Transport.Internals
             int rv = ioctl(_fd, FIONREAD, &readableBytes);
             if (rv == -1)
             {
-                throw new ErrnoException(errno);
+                ThrowHelper.ThrowNewErrnoException();
             }
 
             return readableBytes;
@@ -121,7 +121,7 @@ namespace IoUring.Transport.Internals
             {
                 rv = (int) write(_fd, buffer, length);
             } while (rv == -1 && (error = errno) == EINTR);
-            if (rv == -1) throw new ErrnoException(error);
+            if (rv == -1) ThrowHelper.ThrowNewErrnoException();
         }
 
         public unsafe int SendMsg(msghdr* msg, int flags)

@@ -61,7 +61,7 @@ namespace IoUring.Transport.Internals.Outbound
             LinuxSocket s;
             switch (endpoint)
             {
-                case IPEndPoint iPEndPoint:
+                case IPEndPoint _:
                     var domain = endpoint.AddressFamily == AddressFamily.InterNetwork ? AF_INET : AF_INET6;
                     s = new LinuxSocket(domain, SOCK_STREAM, IPPROTO_TCP, blocking: false);
                     if (options.TcpNoDelay)
@@ -69,7 +69,7 @@ namespace IoUring.Transport.Internals.Outbound
                         s.SetOption(SOL_TCP, TCP_NODELAY, 1);
                     }
                     break;
-                case UnixDomainSocketEndPoint unixDomainSocketEndPoint:
+                case UnixDomainSocketEndPoint _:
                     s = new LinuxSocket(AF_UNIX, SOCK_STREAM, 0, blocking: false);
                     break;
                 case FileHandleEndPoint fileHandleEndPoint:

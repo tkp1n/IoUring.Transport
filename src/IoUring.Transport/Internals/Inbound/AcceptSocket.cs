@@ -39,8 +39,7 @@ namespace IoUring.Transport.Internals.Inbound
             }
         }
 
-        public static AcceptSocket Bind(IPEndPoint ipEndPoint, ChannelWriter<ConnectionContext> acceptQueue,
-            MemoryPool<byte> memoryPool, IoUringOptions options, TransportThreadScheduler scheduler)
+        public static AcceptSocket Bind(IPEndPoint ipEndPoint, ChannelWriter<ConnectionContext> acceptQueue, MemoryPool<byte> memoryPool, IoUringOptions options, TransportThreadScheduler scheduler)
         {
             Debug.WriteLine($"Binding to {ipEndPoint}");
             var domain = ipEndPoint.AddressFamily == AddressFamily.InterNetwork ? AF_INET : AF_INET6;

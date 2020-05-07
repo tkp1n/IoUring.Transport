@@ -5,7 +5,7 @@ namespace IoUring.Transport.Internals
 {
     internal static class MemoryHelper
     {
-        public unsafe static void* UnsafeGetAddressOfPinnedArrayData(byte[] array)
+        public static unsafe void* UnsafeGetAddressOfPinnedArrayData(byte[] array)
             => Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(array));
     }
 }

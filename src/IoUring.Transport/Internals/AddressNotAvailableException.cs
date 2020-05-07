@@ -2,7 +2,7 @@
 
 namespace IoUring.Transport.Internals
 {
-    internal class AddressNotAvailableException : Exception
+    internal sealed class AddressNotAvailableException : Exception
     {
         public AddressNotAvailableException(string message) : base(message) { }
     }

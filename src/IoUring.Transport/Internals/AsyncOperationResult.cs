@@ -3,7 +3,7 @@ using System.Diagnostics;
 
 namespace IoUring.Transport.Internals
 {
-    public readonly struct AsyncOperationResult
+    internal readonly struct AsyncOperationResult
     {
         public static readonly Exception CompleteWithoutErrorSentinel = new Exception();
         private readonly bool _completedSynchronously;

@@ -107,7 +107,7 @@ namespace System.Buffers
         /// </summary>
         private MemoryPoolBlock AllocateSlab()
         {
-            var slab = MemoryPoolSlab.Create(_slabLength);
+            var slab = new MemoryPoolSlab(_slabLength);
             _slabs.Push(slab);
 
             var basePtr = slab.NativePointer;

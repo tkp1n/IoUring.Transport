@@ -99,7 +99,7 @@ namespace IoUring.Transport.Internals.Inbound
                 if (_state != ConnectionListenerState.Bound) throw new InvalidOperationException();
             }
 
-            Debug.WriteLine($"Accepting on ConnectionListner for {EndPoint}");
+            Debug.WriteLine($"Accepting on ConnectionListener for {EndPoint}");
 
             await foreach (var connection in _acceptQueue.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
             {
@@ -118,7 +118,7 @@ namespace IoUring.Transport.Internals.Inbound
                 _state = ConnectionListenerState.Unbinding;
             }
 
-            Debug.WriteLine($"Unbinding ConnectionListner for {EndPoint}");
+            Debug.WriteLine($"Unbinding ConnectionListener for {EndPoint}");
 
             try
             {

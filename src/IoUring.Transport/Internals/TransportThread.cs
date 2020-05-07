@@ -75,22 +75,23 @@ namespace IoUring.Transport.Internals
 
         protected override void RunAsyncOperations()
         {
+            var ring = _ring;
             while (_asyncOperationQueue.TryDequeue(out var operation))
             {
                 var (socket, operationType) = operation;
                 switch (operationType)
                 {
                     case OperationType.ReadPoll:
-                        _connections[socket].ReadPoll(_ring);
+                        _connections[socket].ReadPoll(ring);
                         continue;
                     case OperationType.WritePoll:
-                        _connections[socket].WritePoll(_ring);
+                        _connections[socket].WritePoll(ring);
                         continue;
                     case OperationType.Unbind:
-                        _acceptSockets[socket].Unbid(_ring);
+                        _acceptSockets[socket].Unbid(ring);
                         continue;
                     case OperationType.RecvSocketPoll:
-                        _socketReceivers[socket].PollReceive(_ring);
+                        _socketReceivers[socket].PollReceive(ring);
                         continue;
                 }
 
@@ -104,14 +105,14 @@ namespace IoUring.Transport.Internals
                         AddAndConnect(socket, state);
                         break;
                     case OperationType.CompleteInbound:
-                        _connections[socket].CompleteInbound(_ring, (Exception) state);
+                        _connections[socket].CompleteInbound(ring, (Exception) state);
                         break;
                     case OperationType.CompleteOutbound:
-                        _connections[socket].CompleteOutbound(_ring, (Exception) state);
+                        _connections[socket].CompleteOutbound(ring, (Exception) state);
                         break;
                     case OperationType.Abort:
                         if (_connections.TryGetValue(socket, out var connection))
-                            connection.Abort(_ring, (ConnectionAbortedException) state);
+                            connection.Abort(ring, (ConnectionAbortedException) state);
                         break;
                 }
             }
@@ -133,7 +134,8 @@ namespace IoUring.Transport.Internals
 
         protected override void Complete()
         {
-            while (_ring.TryRead(out Completion c))
+            var ring = _ring;
+            while (ring.TryRead(out Completion c))
             {
                 var (socket, operationType) = AsyncOperation.FromUlong(c.userData);
                 switch (operationType)
@@ -147,13 +149,13 @@ namespace IoUring.Transport.Internals
                         CompleteAccept(socket, c.result);
                         continue;
                     case OperationType.CancelAccept:
-                        _acceptSockets[socket].Close(_ring);
+                        _acceptSockets[socket].Close(ring);
                         continue;
                     case OperationType.CloseAcceptSocket:
                         CompleteCloseAcceptSocket(socket);
                         break;
                     case OperationType.RecvSocketPoll:
-                        _socketReceivers[socket].CompleteReceivePoll(_ring, c.result);
+                        _socketReceivers[socket].CompleteReceivePoll(ring, c.result);
                         break;
                     case OperationType.RecvSocket:
                         CompleteSocketReceive(socket, c.result);
@@ -164,19 +166,19 @@ namespace IoUring.Transport.Internals
                 switch (operationType)
                 {
                     case OperationType.ReadPoll:
-                        context.CompleteReadPoll(_ring, c.result);
+                        context.CompleteReadPoll(ring, c.result);
                         break;
                     case OperationType.Read:
-                        context.CompleteRead(_ring, c.result);
+                        context.CompleteRead(ring, c.result);
                         break;
                     case OperationType.WritePoll:
-                        context.CompleteWritePoll(_ring, c.result);
+                        context.CompleteWritePoll(ring, c.result);
                         break;
                     case OperationType.Write:
-                        context.CompleteWrite(_ring, c.result);
+                        context.CompleteWrite(ring, c.result);
                         break;
                     case OperationType.Connect:
-                        CompleteConnect((OutboundConnection) context, c.result);
+                        CompleteConnect(_ring, (OutboundConnection) context, c.result);
                         break;
                     case OperationType.CloseConnection:
                         CompleteCloseConnection(context, socket);
@@ -187,15 +189,16 @@ namespace IoUring.Transport.Internals
 
         private void CompleteAccept(int socket, int result)
         {
+            var ring = _ring;
             if (!_acceptSockets.TryGetValue(socket, out var acceptSocket)) return; // socket already closed
-            if (acceptSocket.TryCompleteAccept(_ring, result, out var connection))
+            if (acceptSocket.TryCompleteAccept(ring, result, out var connection))
             {
                 _connections[connection.Socket] = connection;
                 acceptSocket.AcceptQueue.TryWrite(connection);
 
-                acceptSocket.Accept(_ring);
-                connection.ReadPoll(_ring);
-                connection.ReadFromApp(_ring);
+                acceptSocket.Accept(ring);
+                connection.ReadPoll(ring);
+                connection.ReadFromApp(ring);
             }
         }
 
@@ -207,24 +210,25 @@ namespace IoUring.Transport.Internals
 
         private void CompleteSocketReceive(int socket, int result)
         {
+            var ring = _ring;
             if (!_socketReceivers.TryGetValue(socket, out var receiver)) return;
-            if (receiver.TryCompleteReceive(_ring, result, out var connection))
+            if (receiver.TryCompleteReceive(ring, result, out var connection))
             {
                 _connections[connection.Socket] = connection;
                 receiver.AcceptQueue.TryWrite(connection);
 
-                receiver.PollReceive(_ring);
-                connection.ReadPoll(_ring);
-                connection.ReadFromApp(_ring);
+                receiver.PollReceive(ring);
+                connection.ReadPoll(ring);
+                connection.ReadFromApp(ring);
             }
         }
 
-        private void CompleteConnect(OutboundConnection context, int result)
+        private static void CompleteConnect(Ring ring, OutboundConnection context, int result)
         {
-            context.CompleteConnect(_ring, result);
+            context.CompleteConnect(ring, result);
 
-            context.ReadPoll(_ring);
-            context.ReadFromApp(_ring);
+            context.ReadPoll(ring);
+            context.ReadFromApp(ring);
         }
 
         private void CompleteCloseConnection(IoUringConnection context, int socket)

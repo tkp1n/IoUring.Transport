@@ -1,5 +1,4 @@
-﻿using System.Reflection.Metadata;
-using System.Runtime.CompilerServices;
+﻿using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace IoUring.Transport

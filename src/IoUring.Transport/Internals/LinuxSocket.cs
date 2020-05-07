@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
-using Microsoft.AspNetCore.Connections;
 using Tmds.Linux;
 using static Tmds.Linux.LibC;
 

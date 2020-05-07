@@ -8,8 +8,6 @@ using System.Net.Sockets;
 using System.Threading.Tasks;
 using IoUring.Transport.Internals;
 using IoUring.Transport.Internals.Inbound;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Xunit;
 

@@ -1,5 +1,4 @@
 using System.Runtime.InteropServices;
-using static Tmds.Linux.LibC;
 
 namespace IoUring.Transport.Internals
 {

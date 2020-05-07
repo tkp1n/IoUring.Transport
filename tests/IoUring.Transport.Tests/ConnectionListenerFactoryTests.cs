@@ -37,12 +37,7 @@ namespace IoUring.Transport.Tests
         public async Task SmokeTest(EndPoint endPoint)
         {
             var options = Options.Create(new IoUringOptions());
-            var logger = new ServiceCollection()
-                .AddLogging()
-                .BuildServiceProvider()
-                .GetService<ILoggerFactory>();
-
-            var transport = new IoUringTransport(options, logger);
+            var transport = new IoUringTransport(options);
 
             try
             {

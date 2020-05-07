@@ -3,7 +3,6 @@ using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using IoUring.Transport.Internals.Inbound;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace IoUring.Transport.Internals
@@ -16,12 +15,10 @@ namespace IoUring.Transport.Internals
         private AcceptThread _acceptThread;
         private int _refCount;
         private readonly IoUringOptions _options;
-        private readonly ILoggerFactory _loggerFactory;
 
-        public IoUringTransport(IOptions<IoUringOptions> options, ILoggerFactory loggerFactory)
+        public IoUringTransport(IOptions<IoUringOptions> options)
         {
             _options = (options ?? throw new ArgumentNullException(nameof(options))).Value;
-            _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
 
             Limits.SetToMax(Resource.RLIMIT_NOFILE);
 
@@ -43,7 +40,7 @@ namespace IoUring.Transport.Internals
         private AcceptThread CreateAcceptThread()
         {
             Debug.Assert(Monitor.IsEntered(_lock));
-            if (_refCount == Disposed) throw new ObjectDisposedException(nameof(IoUringTransport));
+            if (_refCount == Disposed) ThrowHelper.ThrowNewObjectDisposedException(ThrowHelper.ExceptionArgument.IoUringTransport);
 
             var thread = new AcceptThread(_options, TransportThreads);
             thread.Run();
@@ -54,7 +51,7 @@ namespace IoUring.Transport.Internals
         {
             lock (_lock)
             {
-                if (_refCount == Disposed) throw new ObjectDisposedException(nameof(IoUringTransport));
+                if (_refCount == Disposed) ThrowHelper.ThrowNewObjectDisposedException(ThrowHelper.ExceptionArgument.IoUringTransport);
                 _refCount++;
             }
         }
@@ -63,7 +60,7 @@ namespace IoUring.Transport.Internals
         {
             lock (_lock)
             {
-                if (_refCount == Disposed) throw new ObjectDisposedException(nameof(IoUringTransport));
+                if (_refCount == Disposed) ThrowHelper.ThrowNewObjectDisposedException(ThrowHelper.ExceptionArgument.IoUringTransport);
                 _refCount--;
             }
         }
@@ -76,7 +73,7 @@ namespace IoUring.Transport.Internals
             lock (_lock)
             {
                 if (_refCount == Disposed) return;
-                if ( _refCount != 0) throw new InvalidOperationException();
+                if ( _refCount != 0) ThrowHelper.ThrowNewInvalidOperationException();
                 _refCount = Disposed;
                 transportThreads = TransportThreads;
                 TransportThreads = null;

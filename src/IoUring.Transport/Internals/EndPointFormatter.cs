@@ -55,22 +55,22 @@ namespace IoUring.Transport.Internals
                 int port = ntohs(addrIn->sin_port);
                 return new IPEndPoint(new IPAddress(value), port);
             }
-
-            if (addr->ss_family == AF_INET6)
+            else if (addr->ss_family == AF_INET6)
             {
                 sockaddr_in6* addrIn = (sockaddr_in6*)addr;
-                // We can't check if we can use reuseAddress without allocating.
-                const int length = 16;
-                var bytes = new byte[length];
-                for (int i = 0; i < length; i++)
+                Span<byte> bytes = stackalloc byte[16];
+                for (int i = 0; i < bytes.Length; i++)
                 {
                     bytes[i] = addrIn->sin6_addr.s6_addr[i];
                 }
                 int port = ntohs(addrIn->sin6_port);
                 return new IPEndPoint(new IPAddress(bytes, addrIn->sin6_scope_id), port);
             }
-
-            throw new NotSupportedException($"Address family not supported: {addr->ss_family.ToString()}");
+            else
+            {
+                ThrowHelper.ThrowNewNotSupportedException_AddressFamilyNotSupported();
+                return null;
+            }
         }
 
         public static unsafe void ToSockAddr(this UnixDomainSocketEndPoint domainSocketEndPoint, sockaddr_un* addr)

@@ -28,9 +28,9 @@ namespace IoUring.Transport.Internals
         public static unsafe void SetToMax(Resource resource)
         {
             rlimit rlp = default;
-            if (getrlimit((int) resource, &rlp) != 0) throw new ErrnoException(errno);
+            if (getrlimit((int) resource, &rlp) != 0) ThrowHelper.ThrowNewErrnoException();
             rlp.rlim_cur = rlp.rlim_max;
-            if (setrlimit((int) resource, &rlp) != 0) throw new ErrnoException(errno);
+            if (setrlimit((int) resource, &rlp) != 0) ThrowHelper.ThrowNewErrnoException();
         }
     }
 }

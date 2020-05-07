@@ -44,8 +44,8 @@ namespace IoUring.Transport.Internals.Inbound
         {
             lock (Gate)
             {
-                if (_state >= ConnectionListenerState.Disposing) throw new ObjectDisposedException(nameof(ConnectionListener));
-                if (_state != ConnectionListenerState.New) throw new InvalidOperationException();
+                if (_state >= ConnectionListenerState.Disposing) ThrowHelper.ThrowNewObjectDisposedException(ThrowHelper.ExceptionArgument.ConnectionListener);
+                if (_state != ConnectionListenerState.New) ThrowHelper.ThrowNewInvalidOperationException();
                 _state = ConnectionListenerState.Binding;
             }
 
@@ -75,12 +75,13 @@ namespace IoUring.Transport.Internals.Inbound
                         EndPoint = _transport.AcceptThread.Bind(fileHandleEndPoint, _acceptQueue);
                         break;
                     default:
-                        throw new NotSupportedException($"Unknown Endpoint {endpoint.GetType()}");
+                        ThrowHelper.ThrowNewNotSupportedException_EndPointNotSupported();
+                        break;
                 }
 
                 lock (Gate)
                 {
-                    if (_state != ConnectionListenerState.Binding) throw new InvalidOperationException();
+                    if (_state != ConnectionListenerState.Binding) ThrowHelper.ThrowNewInvalidOperationException();
                     _state = ConnectionListenerState.Bound;
                 }
             }
@@ -95,8 +96,8 @@ namespace IoUring.Transport.Internals.Inbound
         {
             lock (Gate)
             {
-                if (_state >= ConnectionListenerState.Disposing) throw new ObjectDisposedException(nameof(ConnectionListener));
-                if (_state != ConnectionListenerState.Bound) throw new InvalidOperationException();
+                if (_state >= ConnectionListenerState.Disposing) ThrowHelper.ThrowNewObjectDisposedException(ThrowHelper.ExceptionArgument.ConnectionListener);
+                if (_state != ConnectionListenerState.Bound) ThrowHelper.ThrowNewInvalidOperationException();
             }
 
             Debug.WriteLine($"Accepting on ConnectionListener for {EndPoint}");
@@ -113,8 +114,8 @@ namespace IoUring.Transport.Internals.Inbound
         {
             lock (Gate)
             {
-                if (_state >= ConnectionListenerState.Disposing) throw new ObjectDisposedException(nameof(ConnectionListener));
-                if (_state != ConnectionListenerState.Bound) throw new InvalidOperationException();
+                if (_state >= ConnectionListenerState.Disposing) ThrowHelper.ThrowNewObjectDisposedException(ThrowHelper.ExceptionArgument.ConnectionListener);
+                if (_state != ConnectionListenerState.Bound) ThrowHelper.ThrowNewInvalidOperationException();
                 _state = ConnectionListenerState.Unbinding;
             }
 
@@ -140,7 +141,7 @@ namespace IoUring.Transport.Internals.Inbound
 
                 lock (Gate)
                 {
-                    if (_state != ConnectionListenerState.Unbinding) throw new InvalidOperationException();
+                    if (_state != ConnectionListenerState.Unbinding) ThrowHelper.ThrowNewInvalidOperationException();
                     _state = ConnectionListenerState.Unbound;
                 }
             }

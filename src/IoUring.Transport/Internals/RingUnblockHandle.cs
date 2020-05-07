@@ -23,7 +23,7 @@ namespace IoUring.Transport.Internals
             _ring = ring;
 
             int res = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
-            if (res == -1) throw new ErrnoException(errno);
+            if (res == -1) ThrowHelper.ThrowNewErrnoException();
             _eventfd = res;
 
             IoVec->iov_base = Buffer;
@@ -78,7 +78,7 @@ namespace IoUring.Transport.Internals
                     return;
                 }
 
-                throw new ErrnoException(err);
+                ThrowHelper.ThrowNewErrnoException(err);
             }
 
             Debug.WriteLine("EventFd poll completed");
@@ -98,7 +98,7 @@ namespace IoUring.Transport.Internals
                     return;
                 }
 
-                throw new ErrnoException(err);
+                ThrowHelper.ThrowNewErrnoException(err);
             }
 
             Debug.WriteLine("EventFd read completed");

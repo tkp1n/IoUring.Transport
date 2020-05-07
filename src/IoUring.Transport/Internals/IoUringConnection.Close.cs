@@ -148,9 +148,6 @@ namespace IoUring.Transport.Internals
 
             await _waitForConnectionClosedTcs.Task;
             _connectionClosedTokenSource.Dispose();
-
-            if (_iovecHandle.IsAllocated)
-                _iovecHandle.Free();
         }
     }
 }

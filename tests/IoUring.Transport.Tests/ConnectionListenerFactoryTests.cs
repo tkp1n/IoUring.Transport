@@ -41,19 +41,29 @@ namespace IoUring.Transport.Tests
             {
                 var listenerFactory = new ConnectionListenerFactory(transport, options);
                 var listener = await listenerFactory.BindAsync(endPoint);
-                var client = new EchoClient(listener.EndPoint);
 
                 try
                 {
-                    var connection = await listener.AcceptAsync();
+                    for (int i = 0; i < 3; i++)
+                    {
+                        var client = new EchoClient(listener.EndPoint);
+                        var connection = await listener.AcceptAsync();
 
-                    var exchange = client.ExchangeData();
-                    await LoopBack(connection.Transport);
-                    await exchange;
+                        for (int j = 0; j < 3; j++)
+                        {
+                            var exchange = client.ExchangeData();
+                            await LoopBack(connection.Transport);
+                            await exchange;
+                        }
+
+                        await connection.Transport.Output.CompleteAsync();
+                        await connection.Transport.Input.CompleteAsync();
+                        await connection.DisposeAsync();
+                        client.Close();
+                    }
                 }
                 finally
                 {
-                    client.Close();
                     await listener.UnbindAsync();
                     await listener.DisposeAsync();
                 }
@@ -68,6 +78,7 @@ namespace IoUring.Transport.Tests
         {
             var read = await transport.Input.ReadAsync();
             await transport.Output.WriteAsync(read.Buffer.ToArray().AsMemory());
+            transport.Input.AdvanceTo(read.Buffer.End);
         }
     }
 }

@@ -49,13 +49,19 @@ namespace IoUring.Transport.Tests
 
             try
             {
-                var connection = await connectionFactory.ConnectAsync(server.EndPoint);
+                for (int i = 0; i < 3; i++)
+                {
+                    var connection = await connectionFactory.ConnectAsync(server.EndPoint);
 
-                await SendReceiveData(connection.Transport);
+                    for (int j = 0; j < 3; j++)
+                    {
+                        await SendReceiveData(connection.Transport);
+                    }
 
-                await connection.Transport.Output.CompleteAsync();
-                await connection.Transport.Input.CompleteAsync();
-                await connection.DisposeAsync();
+                    await connection.Transport.Output.CompleteAsync();
+                    await connection.Transport.Input.CompleteAsync();
+                    await connection.DisposeAsync();
+                }
             }
             finally
             {
@@ -74,10 +80,16 @@ namespace IoUring.Transport.Tests
             Assert.False(sendResult.IsCompleted);
             Assert.False(sendResult.IsCanceled);
 
-            var recvResult = await transport.Input.ReadAsync();
+            if (!transport.Input.TryRead(out var recvResult))
+            {
+                recvResult = await transport.Input.ReadAsync();
+            }
+
             Assert.False(recvResult.IsCompleted);
             Assert.False(recvResult.IsCanceled);
             var recvBuffer = recvResult.Buffer.ToArray();
+
+            transport.Input.AdvanceTo(recvResult.Buffer.End);
 
             Assert.True(sendBuffer.AsSpan(0, 1024).SequenceEqual(recvBuffer.AsSpan(0, 1024)));
             ArrayPool<byte>.Shared.Return(sendBuffer);

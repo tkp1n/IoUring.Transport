@@ -10,7 +10,7 @@ namespace IoUring.Transport.Internals
         public void WritePoll(Ring ring)
         {
             int socket = Socket;
-            Debug.WriteLine($"Adding write poll on {Socket}");
+            Debug.WriteLine($"Adding write poll on {socket}");
             ring.PreparePollAdd(socket, (ushort) POLLOUT, AsyncOperation.WritePollFor(socket).AsUlong());
             SetFlag(ConnectionState.PollingWrite);
         }

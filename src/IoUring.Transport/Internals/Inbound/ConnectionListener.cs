@@ -10,7 +10,7 @@ using Microsoft.AspNetCore.Connections;
 
 namespace IoUring.Transport.Internals.Inbound
 {
-    internal class ConnectionListener : IConnectionListener
+    internal sealed class ConnectionListener : IConnectionListener
     {
         private readonly IoUringTransport _transport;
         private readonly Channel<ConnectionContext> _acceptQueue;

@@ -117,16 +117,10 @@ namespace IoUring.Transport.Internals.Inbound
             header->msg_control = control;
             header->msg_controllen = _control.Length;
 
-            int recipient = _recipient;
+            LinuxSocket recipient = _recipient;
             Debug.WriteLine($"Adding recvmsg to receive socket via {recipient}");
-            ssize_t rv;
-            int err;
-            do
-            {
-                rv = recvmsg(recipient, header, (MSG_NOSIGNAL | MSG_CMSG_CLOEXEC));
-            } while (rv == -1 && (err = errno) == EAGAIN);
 
-            result = rv == -1 ? -errno : (int) rv;
+            result = recipient.RecvMsg(header, (MSG_NOSIGNAL | MSG_CMSG_CLOEXEC));
             // End of work-around for https://github.com/axboe/liburing/issues/128
 
             connection = default;
@@ -166,7 +160,7 @@ namespace IoUring.Transport.Internals.Inbound
                 return true;
             }
 
-            err = -result;
+            int err = -result;
             if (err == EAGAIN || err == EWOULDBLOCK || err == EINTR)
             {
                 Debug.WriteLine("Recevied socket for nothing");

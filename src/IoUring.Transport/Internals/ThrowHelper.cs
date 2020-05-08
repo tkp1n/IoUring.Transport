@@ -62,6 +62,7 @@ namespace IoUring.Transport.Internals
 
         public enum ExceptionArgument
         {
+            ConnectionFactory,
             ConnectionListener,
             IoUringTransport
         }

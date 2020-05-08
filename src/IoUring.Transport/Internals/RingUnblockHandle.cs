@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using Tmds.Linux;
@@ -46,18 +45,12 @@ namespace IoUring.Transport.Internals
 
         private void ReadPollEventFd()
         {
-#if TRACE_IO_URING
-            Trace.WriteLine("Adding poll on eventfd");
-#endif
             int fd = _eventfd;
             _ring.PreparePollAdd(fd, (ushort)POLLIN, AsyncOperation.PollEventFd(fd).AsUlong());
         }
 
         private void ReadEventFd()
         {
-#if TRACE_IO_URING
-            Trace.WriteLine("Adding read on eventfd");
-#endif
             int fd = _eventfd;
             _ring.PrepareReadV(fd, IoVec, 1, userData: AsyncOperation.ReadEventFd(fd).AsUlong());
         }
@@ -77,9 +70,6 @@ namespace IoUring.Transport.Internals
                 return;
             }
 
-#if TRACE_IO_URING
-            Trace.WriteLine("EventFd poll completed");
-#endif
             ReadEventFd();
         }
 
@@ -88,10 +78,6 @@ namespace IoUring.Transport.Internals
             var err = -result;
             if (err == EAGAIN || err == EINTR)
             {
-#if TRACE_IO_URING
-                    Trace.WriteLine("polled eventfd for nothing");
-#endif
-
                 ReadPollEventFd();
             }
             else
@@ -104,29 +90,24 @@ namespace IoUring.Transport.Internals
         {
             if (result < 0)
             {
-                if (HandleCompleteEventFdReadError(result)) return;
+                HandleCompleteEventFdReadError(result);
+                return;
             }
 
-#if TRACE_IO_URING
-            Trace.WriteLine("EventFd read completed");
-#endif
             ReadPollEventFd();
         }
 
-        private bool HandleCompleteEventFdReadError(int result)
+        private void HandleCompleteEventFdReadError(int result)
         {
             var err = -result;
             if (err == EAGAIN || err == EINTR)
             {
-#if TRACE_IO_URING
-                    Trace.WriteLine("read eventfd for nothing");
-#endif
                 ReadEventFd();
-                return true;
             }
-
-            ThrowHelper.ThrowNewErrnoException(err);
-            return false;
+            else
+            {
+                ThrowHelper.ThrowNewErrnoException(err);
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -149,10 +130,6 @@ namespace IoUring.Transport.Internals
 
         private void Unblock()
         {
-#if TRACE_IO_URING
-            Trace.WriteLine("Attempting to unblock thread on ring");
-#endif
-
             byte* val = stackalloc byte[sizeof(ulong)];
             Unsafe.WriteUnaligned(val, 1UL);
             _eventfd.Write(val, sizeof(ulong));

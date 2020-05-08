@@ -9,20 +9,23 @@ namespace IoUring.Transport.Internals.Outbound
 {
     internal sealed class ConnectionFactory : IConnectionFactory, IAsyncDisposable
     {
-        // TODO: state machine for class
+        private const int True = 1;
         private readonly IoUringTransport _transport;
         private int _threadIndex = -1; // -1 so we start at 0 at first Increment
+        private int _disposed;
 
         public ConnectionFactory(IoUringTransport transport)
         {
             _transport = transport;
-
             _transport.IncrementThreadRefCount();
         }
 
         public ValueTask<ConnectionContext> ConnectAsync(EndPoint endpoint, CancellationToken cancellationToken = default)
         {
+#if DEBUG
             Debug.WriteLine($"Connecting via ConnectionFactory to {endpoint}");
+#endif
+            if (Volatile.Read(ref _disposed) == True) ThrowHelper.ThrowNewObjectDisposedException(ThrowHelper.ExceptionArgument.ConnectionFactory);
 
             var threads = _transport.TransportThreads;
             var index = Interlocked.Increment(ref _threadIndex) % threads.Length;
@@ -32,7 +35,13 @@ namespace IoUring.Transport.Internals.Outbound
 
         public ValueTask DisposeAsync()
         {
+#if DEBUG
             Debug.WriteLine($"Disposing ConnectionFactory");
+#endif
+            if (Interlocked.Exchange(ref _disposed, True) == True)
+            {
+                return default;
+            }
 
             _transport.DecrementThreadRefCount();
             return default;

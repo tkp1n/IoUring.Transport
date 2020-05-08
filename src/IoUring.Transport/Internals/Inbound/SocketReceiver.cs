@@ -46,17 +46,16 @@ namespace IoUring.Transport.Internals.Inbound
 
         public void CompleteReceivePoll(Ring ring, int result)
         {
-            if (result >= 0)
+            if (result < 0)
             {
+                HandleCompleteReceivePollError(ring, result);
+                return;
+            }
+
 #if TRACE_IO_URING
                 Trace.WriteLine($"Completed poll to receive socket via {(int)_recipient}");
 #endif
-                Receive(ring);
-            }
-            else
-            {
-                HandleCompleteReceivePollError(ring, result);
-            }
+            Receive(ring);
         }
 
         private void HandleCompleteReceivePollError(Ring ring, int result)
@@ -103,7 +102,9 @@ namespace IoUring.Transport.Internals.Inbound
             header->msg_controllen = _control.Length;
 
             int socket = _recipient;
+#if TRACE_IO_URING
             Trace.WriteLine($"Adding recvmsg to receive socket via {socket}");
+#endif
             ring.PrepareRecvMsg(socket, header, (uint)(MSG_NOSIGNAL | MSG_CMSG_CLOEXEC), AsyncOperation.RecvSocket(socket).AsUlong());
             */
             ring.PrepareNop(AsyncOperation.RecvSocket(_recipient).AsUlong());
@@ -139,49 +140,48 @@ namespace IoUring.Transport.Internals.Inbound
             // End of work-around for https://github.com/axboe/liburing/issues/128
 
             connection = default;
-            if (result >= 0)
+            if (result < 0)
             {
-                bool receivedSocket = false;
-                LinuxSocket socket = default;
-                for (cmsghdr* cmsg = CMSG_FIRSTHDR(header); cmsg != null; cmsg = CMSG_NXTHDR(header, cmsg))
+                HandleCompleteReceiveError(ring, result);
+                return false;
+            }
+
+            bool receivedSocket = false;
+            LinuxSocket socket = default;
+            for (cmsghdr* cmsg = CMSG_FIRSTHDR(header); cmsg != null; cmsg = CMSG_NXTHDR(header, cmsg))
+            {
+                if (cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_RIGHTS)
                 {
-                    if (cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_RIGHTS)
-                    {
 #if TRACE_IO_URING
                         Trace.WriteLine($"Received socket from {(int) _recipient}");
 #endif
-                        int* fdptr = (int*)CMSG_DATA(cmsg);
-                        socket = *fdptr;
-                        socket.SetFlag(O_NONBLOCK);
+                    int* fdptr = (int*) CMSG_DATA(cmsg);
+                    socket = *fdptr;
+                    socket.SetFlag(O_NONBLOCK);
 
-                        receivedSocket = true;
-                        break;
-                    }
+                    receivedSocket = true;
+                    break;
                 }
-
-                if (!receivedSocket)
-                {
-                    if (result != 0)
-                    {
-                        PollReceive(ring);
-                    }
-#if TRACE_IO_URING
-                    else
-                    {
-                        Trace.WriteLine($"Socket recipient {(int) _recipient} closed");
-                    }
-#endif
-
-                    return false;
-                }
-
-                connection = new InboundConnection(socket, _endPoint, null, _memoryPool, _options, _scheduler);
-                return true;
             }
 
-            HandleCompleteReceiveError(ring, result);
+            if (!receivedSocket)
+            {
+                if (result != 0)
+                {
+                    PollReceive(ring);
+                }
+#if TRACE_IO_URING
+                else
+                {
+                    Trace.WriteLine($"Socket recipient {(int) _recipient} closed");
+                }
+#endif
 
-            return false;
+                return false;
+            }
+
+            connection = new InboundConnection(socket, _endPoint, null, _memoryPool, _options, _scheduler);
+            return true;
         }
 
         private void HandleCompleteReceiveError(Ring ring, int result)

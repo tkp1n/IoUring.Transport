@@ -73,7 +73,8 @@ namespace IoUring.Transport.Internals
         {
             if (result < 0)
             {
-                if (HandleCompleteEventFdReadPollError(result)) return;
+                HandleCompleteEventFdReadPollError(result);
+                return;
             }
 
 #if TRACE_IO_URING
@@ -82,7 +83,7 @@ namespace IoUring.Transport.Internals
             ReadEventFd();
         }
 
-        private bool HandleCompleteEventFdReadPollError(int result)
+        private void HandleCompleteEventFdReadPollError(int result)
         {
             var err = -result;
             if (err == EAGAIN || err == EINTR)
@@ -92,11 +93,11 @@ namespace IoUring.Transport.Internals
 #endif
 
                 ReadPollEventFd();
-                return true;
             }
-
-            ThrowHelper.ThrowNewErrnoException(err);
-            return false;
+            else
+            {
+                ThrowHelper.ThrowNewErrnoException(err);
+            }
         }
 
         private void CompleteEventFdRead(int result)

@@ -22,17 +22,16 @@ namespace IoUring.Transport.Internals
         public void CompleteWritePoll(Ring ring, int result)
         {
             RemoveFlag(ConnectionState.PollingWrite);
-            if (result >= 0)
-            {
-#if TRACE_IO_URING
-                Trace.WriteLine($"Completed write poll on {(int)Socket}");
-#endif
-                Write(ring);
-            }
-            else
+            if (result < 0)
             {
                 HandleCompleteWritePollError(ring, result);
+                return;
             }
+
+#if TRACE_IO_URING
+            Trace.WriteLine($"Completed write poll on {(int)Socket}");
+#endif
+            Write(ring);
         }
 
         private void HandleCompleteWritePollError(Ring ring, int result)
@@ -95,38 +94,37 @@ namespace IoUring.Transport.Internals
             }
 
             var lastWrite = LastWrite;
-            if (result >= 0)
+            if (result < 0)
             {
-                SequencePosition end;
-                if (result == 0)
-                {
-#if TRACE_IO_URING
-                    Trace.WriteLine($"Wrote {result} bytes to {(int)Socket}");
-#endif
-                    end = lastWrite.Start;
-                }
-                else if (lastWrite.Length == result)
-                {
-#if TRACE_IO_URING
-                    Trace.WriteLine($"Wrote all {result} bytes to {(int)Socket}");
-#endif
-                    end = lastWrite.End;
-                }
-                else
-                {
-#if TRACE_IO_URING
-                    Trace.WriteLine($"Wrote some {result} bytes to {(int)Socket}");
-#endif
-                    end = lastWrite.GetPosition(result);
-                }
+                HandleCompleteWriteError(ring, result, lastWrite);
+                return;
+            }
 
-                Outbound.AdvanceTo(end);
-                ReadFromApp(ring);
+            SequencePosition end;
+            if (result == 0)
+            {
+#if TRACE_IO_URING
+                Trace.WriteLine($"Wrote {result} bytes to {(int)Socket}");
+#endif
+                end = lastWrite.Start;
+            }
+            else if (lastWrite.Length == result)
+            {
+#if TRACE_IO_URING
+                Trace.WriteLine($"Wrote all {result} bytes to {(int)Socket}");
+#endif
+                end = lastWrite.End;
             }
             else
             {
-                HandleCompleteWriteError(ring, result, lastWrite);
+#if TRACE_IO_URING
+                Trace.WriteLine($"Wrote some {result} bytes to {(int)Socket}");
+#endif
+                end = lastWrite.GetPosition(result);
             }
+
+            Outbound.AdvanceTo(end);
+            ReadFromApp(ring);
         }
 
         private void HandleCompleteWriteError(Ring ring, int result, ReadOnlySequence<byte> lastWrite)

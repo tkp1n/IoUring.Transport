@@ -22,8 +22,8 @@ namespace IoUring.Transport.Internals.Outbound
 
         public ValueTask<ConnectionContext> ConnectAsync(EndPoint endpoint, CancellationToken cancellationToken = default)
         {
-#if DEBUG
-            Debug.WriteLine($"Connecting via ConnectionFactory to {endpoint}");
+#if TRACE_IO_URING
+            Trace.WriteLine($"Connecting via ConnectionFactory to {endpoint}");
 #endif
             if (Volatile.Read(ref _disposed) == True) ThrowHelper.ThrowNewObjectDisposedException(ThrowHelper.ExceptionArgument.ConnectionFactory);
 
@@ -35,8 +35,8 @@ namespace IoUring.Transport.Internals.Outbound
 
         public ValueTask DisposeAsync()
         {
-#if DEBUG
-            Debug.WriteLine($"Disposing ConnectionFactory");
+#if TRACE_IO_URING
+            Trace.WriteLine($"Disposing ConnectionFactory");
 #endif
             if (Interlocked.Exchange(ref _disposed, True) == True)
             {

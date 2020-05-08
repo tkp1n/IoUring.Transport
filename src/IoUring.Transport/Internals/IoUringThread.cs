@@ -63,7 +63,9 @@ namespace IoUring.Transport.Internals
                 Complete();
             }
 
-            Debug.WriteLine($"{Thread.CurrentThread.Name} is done");
+#if TRACE_IO_URING
+            Trace.WriteLine($"{Thread.CurrentThread.Name} is done");
+#endif
 
             _threadCompletion.TrySetResult(null);
         }
@@ -79,7 +81,9 @@ namespace IoUring.Transport.Internals
                     return LoopState.WillBlock;
                 }
                 minComplete = 1;
-                Debug.WriteLine($"{Thread.CurrentThread.Name} is going to block");
+#if TRACE_IO_URING
+                Trace.WriteLine($"{Thread.CurrentThread.Name} is going to block");
+#endif
             }
             else
             {
@@ -87,14 +91,18 @@ namespace IoUring.Transport.Internals
             }
 
             _ring.SubmitAndWait(minComplete, out _);
-            Debug.WriteLine($"{Thread.CurrentThread.Name} is unblocked");
+#if TRACE_IO_URING
+            Trace.WriteLine($"{Thread.CurrentThread.Name} is unblocked");
+#endif
             _unblockHandle.NotifyTransitionToUnblocked();
             return LoopState.Running;
         }
 
         public virtual async ValueTask DisposeAsync()
         {
-            Debug.WriteLine("Disposing IoUringThread");
+#if TRACE_IO_URING
+            Trace.WriteLine("Disposing IoUringThread");
+#endif
             _disposed = true;
             _unblockHandle.UnblockIfRequired();
 

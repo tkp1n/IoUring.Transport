@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Diagnostics;
 
 namespace IoUring.Transport.Internals
 {
@@ -20,8 +19,6 @@ namespace IoUring.Transport.Internals
 
         public Exception GetError()
         {
-            Debug.Assert(_error != null);
-
             return _error == CompleteWithoutErrorSentinel ? null : _error;
         }
     }

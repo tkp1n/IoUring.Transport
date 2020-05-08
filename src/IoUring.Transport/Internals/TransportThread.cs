@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Net;
+using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using IoUring.Transport.Internals.Inbound;
@@ -42,7 +43,7 @@ namespace IoUring.Transport.Internals
 
         public EndPoint Bind(IPEndPoint endpoint, ChannelWriter<ConnectionContext> connectionSource)
         {
-            Debug.WriteLine($"Binding to new endpoint {endpoint}");
+            Trace.WriteLine($"Binding to new endpoint {endpoint}");
             var context = AcceptSocket.Bind(endpoint, connectionSource, _memoryPool, _options, _scheduler);
             _acceptSocketsPerEndPoint[endpoint] = context;
             _scheduler.ScheduleAsyncBind(context.Socket, context);
@@ -54,7 +55,7 @@ namespace IoUring.Transport.Internals
         {
             if (_acceptSocketsPerEndPoint.TryRemove(endPoint, out var acceptSocket))
             {
-                Debug.WriteLine($"Unbinding from {endPoint}");
+                Trace.WriteLine($"Unbinding from {endPoint}");
                 _scheduler.ScheduleAsyncUnbind(acceptSocket.Socket);
                 return new ValueTask(acceptSocket.UnbindCompletion);
             }
@@ -79,41 +80,51 @@ namespace IoUring.Transport.Internals
             while (_asyncOperationQueue.TryDequeue(out var operation))
             {
                 var (socket, operationType) = operation;
-                switch (operationType)
+                if ((operationType & (OperationType.ReadPoll | OperationType.WritePoll)) != 0)
                 {
-                    case OperationType.ReadPoll:
-                        _connections[socket].ReadPoll(ring);
-                        continue;
-                    case OperationType.WritePoll:
-                        _connections[socket].WritePoll(ring);
-                        continue;
-                    case OperationType.Unbind:
-                        _acceptSockets[socket].Unbid(ring);
-                        continue;
-                    case OperationType.RecvSocketPoll:
-                        _socketReceivers[socket].PollReceive(ring);
-                        continue;
+                    // hot path
+                    var context = _connections[socket];
+                    if (operationType == OperationType.ReadPoll)
+                    {
+                        context.ReadPoll(ring);
+                    }
+                    else
+                    {
+                        context.WritePoll(ring);
+                    }
                 }
-
-                _asyncOperationStates.Remove(socket, out var state);
-                switch (operationType)
+                else
                 {
-                    case OperationType.Bind:
-                        AddAndAccept(socket, state);
-                        break;
-                    case OperationType.Connect:
-                        AddAndConnect(socket, state);
-                        break;
-                    case OperationType.CompleteInbound:
-                        _connections[socket].CompleteInbound(ring, (Exception) state);
-                        break;
-                    case OperationType.CompleteOutbound:
-                        _connections[socket].CompleteOutbound(ring, (Exception) state);
-                        break;
-                    case OperationType.Abort:
-                        if (_connections.TryGetValue(socket, out var connection))
-                            connection.Abort(ring, (ConnectionAbortedException) state);
-                        break;
+                    switch (operationType)
+                    {
+                        case OperationType.Unbind:
+                            _acceptSockets[socket].Unbid(ring);
+                            continue;
+                        case OperationType.RecvSocketPoll:
+                            _socketReceivers[socket].PollReceive(ring);
+                            continue;
+                    }
+
+                    _asyncOperationStates.Remove(socket, out var state);
+                    switch (operationType)
+                    {
+                        case OperationType.Bind:
+                            AddAndAccept(socket, state);
+                            break;
+                        case OperationType.Connect:
+                            AddAndConnect(socket, state);
+                            break;
+                        case OperationType.CompleteInbound:
+                            _connections[socket].CompleteInbound(ring, (Exception) state);
+                            break;
+                        case OperationType.CompleteOutbound:
+                            _connections[socket].CompleteOutbound(ring, (Exception) state);
+                            break;
+                        case OperationType.Abort:
+                            if (_connections.TryGetValue(socket, out var connection))
+                                connection.Abort(ring, (ConnectionAbortedException) state);
+                            break;
+                    }
                 }
             }
         }
@@ -132,57 +143,69 @@ namespace IoUring.Transport.Internals
             outboundConnectionContext.Connect(_ring);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         protected override void Complete()
         {
             var ring = _ring;
             while (ring.TryRead(out Completion c))
             {
                 var (socket, operationType) = AsyncOperation.FromUlong(c.userData);
-                switch (operationType)
-                {
-                    // Ignored case OperationType.CancelGeneric: continue;
-                    case OperationType.EventFdReadPoll:
-                    case OperationType.EventFdRead:
-                        _unblockHandle.HandleEventFdCompletion(operationType, c.result);
-                        continue;
-                    case OperationType.Accept:
-                        CompleteAccept(socket, c.result);
-                        continue;
-                    case OperationType.CancelAccept:
-                        _acceptSockets[socket].Close(ring);
-                        continue;
-                    case OperationType.CloseAcceptSocket:
-                        CompleteCloseAcceptSocket(socket);
-                        break;
-                    case OperationType.RecvSocketPoll:
-                        _socketReceivers[socket].CompleteReceivePoll(ring, c.result);
-                        break;
-                    case OperationType.RecvSocket:
-                        CompleteSocketReceive(socket, c.result);
-                        break;
-                }
 
-                if (!_connections.TryGetValue(socket, out var context)) continue;
-                switch (operationType)
+                if ((operationType & (OperationType.Read | OperationType.ReadPoll | OperationType.Write | OperationType.WritePoll)) != 0 &&
+                    _connections.TryGetValue(socket, out var ctx))
                 {
-                    case OperationType.ReadPoll:
-                        context.CompleteReadPoll(ring, c.result);
-                        break;
-                    case OperationType.Read:
-                        context.CompleteRead(ring, c.result);
-                        break;
-                    case OperationType.WritePoll:
-                        context.CompleteWritePoll(ring, c.result);
-                        break;
-                    case OperationType.Write:
-                        context.CompleteWrite(ring, c.result);
-                        break;
-                    case OperationType.Connect:
-                        CompleteConnect(_ring, (OutboundConnection) context, c.result);
-                        break;
-                    case OperationType.CloseConnection:
-                        CompleteCloseConnection(context, socket);
-                        break;
+                    // hot path
+                    switch (operationType)
+                    {
+                        case OperationType.ReadPoll:
+                            ctx.CompleteReadPoll(ring, c.result);
+                            break;
+                        case OperationType.Read:
+                            ctx.CompleteRead(ring, c.result);
+                            break;
+                        case OperationType.WritePoll:
+                            ctx.CompleteWritePoll(ring, c.result);
+                            break;
+                        case OperationType.Write:
+                            ctx.CompleteWrite(ring, c.result);
+                            break;
+                    }
+                }
+                else
+                {
+                    switch (operationType)
+                    {
+                        case OperationType.EventFdReadPoll:
+                        case OperationType.EventFdRead:
+                            _unblockHandle.HandleEventFdCompletion(operationType, c.result);
+                            continue;
+                        case OperationType.Accept:
+                            CompleteAccept(socket, c.result);
+                            continue;
+                        case OperationType.CancelAccept:
+                            _acceptSockets[socket].Close(ring);
+                            continue;
+                        case OperationType.CloseAcceptSocket:
+                            CompleteCloseAcceptSocket(socket);
+                            break;
+                        case OperationType.RecvSocketPoll:
+                            _socketReceivers[socket].CompleteReceivePoll(ring, c.result);
+                            break;
+                        case OperationType.RecvSocket:
+                            CompleteSocketReceive(socket, c.result);
+                            break;
+                    }
+
+                    if (!_connections.TryGetValue(socket, out var context)) continue;
+                    switch (operationType)
+                    {
+                        case OperationType.Connect:
+                            CompleteConnect(_ring, (OutboundConnection) context, c.result);
+                            break;
+                        case OperationType.CloseConnection:
+                            CompleteCloseConnection(context, socket);
+                            break;
+                    }
                 }
             }
         }
@@ -239,7 +262,7 @@ namespace IoUring.Transport.Internals
 
         public override async ValueTask DisposeAsync()
         {
-            Debug.WriteLine("Disposing TransportThread");
+            Trace.WriteLine("Disposing TransportThread");
 
             foreach (var (endpoint, _) in _acceptSocketsPerEndPoint)
             {

@@ -47,21 +47,23 @@ namespace IoUring.Transport.Internals
             sockaddr_storage addr;
             endPoint.ToSockAddr(&addr, out var length);
             var rv = bind(_fd, (sockaddr*) &addr, length);
-            if (rv < 0)
+            if (rv < 0) HandleBindError();
+        }
+
+        private static void HandleBindError()
+        {
+            var error = errno;
+            if (error == EADDRINUSE)
             {
-                var error = errno;
-                if (error == EADDRINUSE)
-                {
-                    ThrowHelper.ThrowNewAddressInUseException();
-                }
-
-                if (error == EADDRNOTAVAIL)
-                {
-                    ThrowHelper.ThrowNewAddressNotAvailableException();
-                }
-
-                ThrowHelper.ThrowNewErrnoException(error);
+                ThrowHelper.ThrowNewAddressInUseException();
             }
+
+            if (error == EADDRNOTAVAIL)
+            {
+                ThrowHelper.ThrowNewAddressNotAvailableException();
+            }
+
+            ThrowHelper.ThrowNewErrnoException(error);
         }
 
         public unsafe void Bind(UnixDomainSocketEndPoint endPoint)
@@ -120,7 +122,7 @@ namespace IoUring.Transport.Internals
             {
                 rv = (int) write(_fd, buffer, length);
             } while (rv == -1 && (error = errno) == EINTR);
-            if (rv == -1) ThrowHelper.ThrowNewErrnoException();
+            if (rv == -1) ThrowHelper.ThrowNewErrnoException(error);
         }
 
         public unsafe int SendMsg(msghdr* msg, int flags)
@@ -170,7 +172,9 @@ namespace IoUring.Transport.Internals
             int *fdptr = (int*)CMSG_DATA(cmsg);
             *fdptr = _fd;
 
-            Debug.WriteLine($"Sending accepted socket {_fd} to {recipient}");
+#if TRACE_IO_URING
+            Trace.WriteLine($"Sending accepted socket {_fd} to {recipient}");
+#endif
             recipient.SendMsg(&header, MSG_NOSIGNAL);
             Close();
         }

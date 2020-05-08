@@ -39,7 +39,6 @@ namespace IoUring.Transport.Internals
 
         private AcceptThread CreateAcceptThread()
         {
-            Debug.Assert(Monitor.IsEntered(_lock));
             if (_refCount == Disposed) ThrowHelper.ThrowNewObjectDisposedException(ThrowHelper.ExceptionArgument.IoUringTransport);
 
             var thread = new AcceptThread(_options, TransportThreads);
@@ -81,7 +80,9 @@ namespace IoUring.Transport.Internals
                 _acceptThread = null;
             }
 
-            Debug.WriteLine("Disposing IoUringTransport");
+#if TRACE_IO_URING
+            Trace.WriteLine("Disposing IoUringTransport");
+#endif
 
             if (transportThreads != null)
             {

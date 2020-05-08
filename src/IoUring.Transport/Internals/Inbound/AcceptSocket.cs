@@ -41,7 +41,9 @@ namespace IoUring.Transport.Internals.Inbound
 
         public static AcceptSocket Bind(IPEndPoint ipEndPoint, ChannelWriter<ConnectionContext> acceptQueue, MemoryPool<byte> memoryPool, IoUringOptions options, TransportThreadScheduler scheduler)
         {
-            Debug.WriteLine($"Binding to {ipEndPoint}");
+#if TRACE_IO_URING
+            Trace.WriteLine($"Binding to {ipEndPoint}");
+#endif
             var domain = ipEndPoint.AddressFamily == AddressFamily.InterNetwork ? AF_INET : AF_INET6;
             LinuxSocket s = new LinuxSocket(domain, SOCK_STREAM, IPPROTO_TCP, blocking: true);
             s.SetOption(SOL_SOCKET, SO_REUSEADDR, 1);
@@ -54,7 +56,9 @@ namespace IoUring.Transport.Internals.Inbound
 
         public static AcceptSocket Bind(UnixDomainSocketEndPoint unixDomainSocketEndPoint, ChannelWriter<ConnectionContext> acceptQueue, IoUringOptions options)
         {
-            Debug.WriteLine($"Binding to {unixDomainSocketEndPoint}");
+#if TRACE_IO_URING
+            Trace.WriteLine($"Binding to {unixDomainSocketEndPoint}");
+#endif
             var socketPath = unixDomainSocketEndPoint.ToString();
             var s = new LinuxSocket(AF_UNIX, SOCK_STREAM, 0, blocking: false);
             File.Delete(socketPath);
@@ -66,7 +70,9 @@ namespace IoUring.Transport.Internals.Inbound
 
         public static AcceptSocket Bind(FileHandleEndPoint fileHandleEndPoint, ChannelWriter<ConnectionContext> acceptQueue, IoUringOptions options)
         {
-            Debug.WriteLine($"Binding to {fileHandleEndPoint}");
+#if TRACE_IO_URING
+            Trace.WriteLine($"Binding to {fileHandleEndPoint}");
+#endif
             LinuxSocket s = (int) fileHandleEndPoint.FileHandle;
             var endPoint = s.GetLocalAddress();
             return new AcceptSocket(s, endPoint ?? fileHandleEndPoint, acceptQueue, null, options, null);
@@ -85,7 +91,9 @@ namespace IoUring.Transport.Internals.Inbound
         public void AcceptPoll(Ring ring)
         {
             int socket = Socket;
-            Debug.WriteLine($"Polling for accept on {socket}");
+#if TRACE_IO_URING
+            Trace.WriteLine($"Polling for accept on {socket}");
+#endif
             ring.PreparePollAdd(socket, (ushort) POLLIN, AsyncOperation.PollAcceptFrom(socket).AsUlong());
         }
 
@@ -93,32 +101,45 @@ namespace IoUring.Transport.Internals.Inbound
         {
             if (result >= 0)
             {
-                Debug.WriteLine($"Completed accept poll on {(int)Socket}");
+#if TRACE_IO_URING
+                Trace.WriteLine($"Completed accept poll on {(int)Socket}");
+#endif
                 Accept(ring);
             }
             else
             {
-                var err = -result;
-                if (err == EAGAIN || err == EWOULDBLOCK || err == EINTR)
-                {
-                    Debug.WriteLine("Polled accept for nothing");
+                HandleCompleteAcceptPollError(ring, result);
+            }
+        }
 
-                    if (!IsUnbinding)
-                    {
-                        AcceptPoll(ring);
-                    }
-                }
-                else if (err == ECANCELED && IsUnbinding)
+        private void HandleCompleteAcceptPollError(Ring ring, int result)
+        {
+            var err = -result;
+            if (err == EAGAIN || err == EWOULDBLOCK || err == EINTR)
+            {
+#if TRACE_IO_URING
+                    Trace.WriteLine("Polled accept for nothing");
+#endif
+
+                if (!IsUnbinding)
                 {
-                    Debug.WriteLine("Accept cancelled while unbinding");
+                    AcceptPoll(ring);
                 }
+            }
+            else if (err == ECANCELED && IsUnbinding)
+            {
+#if TRACE_IO_URING
+                    Trace.WriteLine("Accept cancelled while unbinding");
+#endif
             }
         }
 
         public void Accept(Ring ring)
         {
             int socket = Socket;
-            Debug.WriteLine($"Adding accept on {socket}");
+#if TRACE_IO_URING
+            Trace.WriteLine($"Adding accept on {socket}");
+#endif
 
             if (IsIpSocket)
             {
@@ -134,30 +155,42 @@ namespace IoUring.Transport.Internals.Inbound
             socket = default;
             if (result < 0)
             {
-                var err = -result;
-                if (err == EAGAIN || err == EINTR || err == EMFILE)
-                {
-                    Debug.WriteLine($"Accepted for nothing on {Socket}");
-
-                    if (!IsUnbinding)
-                    {
-                        Accept(ring);
-                    }
-
-                    return false;
-                }
-
-                if (err == ECANCELED && IsUnbinding)
-                {
-                    Debug.WriteLine("Accept cancelled while unbinding");
-                    return false;
-                }
-
-                ThrowHelper.ThrowNewErrnoException(err);
+                if (!HandleCompleteAcceptSocketError(ring, result)) return false;
             }
 
-            Debug.WriteLine($"Accepted {result} on {Socket}");
+#if TRACE_IO_URING
+            Trace.WriteLine($"Accepted {result} on {Socket}");
+#endif
             socket = result;
+            return true;
+        }
+
+        private bool HandleCompleteAcceptSocketError(Ring ring, int result)
+        {
+            var err = -result;
+            if (err == EAGAIN || err == EINTR || err == EMFILE)
+            {
+#if TRACE_IO_URING
+                    Trace.WriteLine($"Accepted for nothing on {Socket}");
+#endif
+
+                if (!IsUnbinding)
+                {
+                    Accept(ring);
+                }
+
+                return false;
+            }
+
+            if (err == ECANCELED && IsUnbinding)
+            {
+#if TRACE_IO_URING
+                    Trace.WriteLine("Accept cancelled while unbinding");
+#endif
+                return false;
+            }
+
+            ThrowHelper.ThrowNewErrnoException(err);
             return true;
         }
 
@@ -188,7 +221,9 @@ namespace IoUring.Transport.Internals.Inbound
         {
             IsUnbinding = true;
             int socket = Socket;
-            Debug.WriteLine($"Adding async cancel on {socket} to unbind");
+#if TRACE_IO_URING
+            Trace.WriteLine($"Adding async cancel on {socket} to unbind");
+#endif
             ring.PrepareCancel(AsyncOperation.AcceptFrom(Socket).AsUlong(), AsyncOperation.CancelAccept(socket).AsUlong());
         }
 
@@ -196,21 +231,29 @@ namespace IoUring.Transport.Internals.Inbound
         {
             if (ring.Supports(RingOperation.Close))
             {
-                Debug.WriteLine($"Adding close on {Socket}");
+#if TRACE_IO_URING
+                Trace.WriteLine($"Adding close on {Socket}");
+#endif
                 ring.PrepareClose(Socket, AsyncOperation.CloseAcceptSocket(Socket).AsUlong());
             }
             else
             {
-                Debug.WriteLine($"Closing {Socket}");
+#if TRACE_IO_URING
+                Trace.WriteLine($"Closing {Socket}");
+#endif
                 Socket.Close(); // pre v5.6
-                Debug.WriteLine($"Adding nop on {Socket}");
+#if TRACE_IO_URING
+                Trace.WriteLine($"Adding nop on {Socket}");
+#endif
                 ring.PrepareNop(AsyncOperation.CloseAcceptSocket(Socket).AsUlong());
             }
         }
 
         public void CompleteClose()
         {
-            Debug.WriteLine($"Close (unbind) completed for {Socket}");
+#if TRACE_IO_URING
+            Trace.WriteLine($"Close (unbind) completed for {Socket}");
+#endif
             _unbindCompletion.TrySetResult(null);
         }
     }

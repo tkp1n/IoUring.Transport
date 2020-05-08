@@ -80,28 +80,23 @@ namespace IoUring.Transport.Internals.Outbound
         public unsafe void Connect(Ring ring)
         {
             int socket = Socket;
-            Debug.WriteLine($"Connecting to {socket}");
+#if TRACE_IO_URING
+            Trace.WriteLine($"Connecting to {socket}");
+#endif
             ring.PrepareConnect(socket, Addr, AddrLen, AsyncOperation.ConnectOn(socket).AsUlong());
         }
 
         public void CompleteConnect(Ring ring, int result)
         {
-            Debug.Assert(_connectCompletion != null);
-
             if (result < 0)
             {
-                if (-result == EAGAIN && -result == EINTR)
-                {
-                    Debug.WriteLine($"Connected for nothing to {Socket}");
-                    Connect(ring);
-                    return;
-                }
-
-                _connectCompletion.TrySetException(new ErrnoException(-result));
+                if (HandleCompleteConnectError(ring, result)) return;
             }
             else
             {
-                Debug.WriteLine($"Connected to {Socket}");
+#if TRACE_IO_URING
+                Trace.WriteLine($"Connected to {Socket}");
+#endif
                 var ep = Socket.GetLocalAddress();
                 LocalEndPoint = ep ?? RemoteEndPoint;
 
@@ -109,6 +104,21 @@ namespace IoUring.Transport.Internals.Outbound
             }
 
             _connectCompletion = null;
+        }
+
+        private bool HandleCompleteConnectError(Ring ring, int result)
+        {
+            if (-result == EAGAIN && -result == EINTR)
+            {
+#if TRACE_IO_URING
+                Trace.WriteLine($"Connected for nothing to {Socket}");
+#endif
+                Connect(ring);
+                return true;
+            }
+
+            _connectCompletion.TrySetException(new ErrnoException(-result));
+            return false;
         }
     }
 }

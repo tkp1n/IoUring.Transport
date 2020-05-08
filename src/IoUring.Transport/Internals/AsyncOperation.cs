@@ -1,30 +1,32 @@
-﻿using System.Runtime.CompilerServices;
+﻿using System;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace IoUring.Transport
 {
+    [Flags]
     internal enum OperationType : uint
     {
-        Read,
-        ReadPoll,
-        Write,
-        WritePoll,
-        EventFdReadPoll,
-        EventFdRead,
-        Connect,
-        Bind,
-        AcceptPoll,
-        Accept,
-        CompleteInbound,
-        CompleteOutbound,
-        CancelGeneric,
-        CancelAccept,
-        Abort,
-        CloseConnection,
-        CloseAcceptSocket,
-        Unbind,
-        RecvSocketPoll,
-        RecvSocket
+        Read                = 1 << 0,
+        ReadPoll            = 1 << 1,
+        Write               = 1 << 2,
+        WritePoll           = 1 << 3,
+        EventFdReadPoll     = 1 << 4,
+        EventFdRead         = 1 << 5,
+        Connect             = 1 << 6,
+        Bind                = 1 << 7,
+        AcceptPoll          = 1 << 8,
+        Accept              = 1 << 9,
+        CompleteInbound     = 1 << 10,
+        CompleteOutbound    = 1 << 11,
+        CancelGeneric       = 1 << 12,
+        CancelAccept        = 1 << 13,
+        Abort               = 1 << 14,
+        CloseConnection     = 1 << 15,
+        CloseAcceptSocket   = 1 << 16,
+        Unbind              = 1 << 17,
+        RecvSocketPoll      = 1 << 18,
+        RecvSocket          = 1 << 19
     }
 
     [StructLayout(LayoutKind.Explicit)]

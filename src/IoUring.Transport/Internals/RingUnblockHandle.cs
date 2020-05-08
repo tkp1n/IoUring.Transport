@@ -46,14 +46,18 @@ namespace IoUring.Transport.Internals
 
         private void ReadPollEventFd()
         {
-            Debug.WriteLine("Adding poll on eventfd");
+#if TRACE_IO_URING
+            Trace.WriteLine("Adding poll on eventfd");
+#endif
             int fd = _eventfd;
             _ring.PreparePollAdd(fd, (ushort)POLLIN, AsyncOperation.PollEventFd(fd).AsUlong());
         }
 
         private void ReadEventFd()
         {
-            Debug.WriteLine("Adding read on eventfd");
+#if TRACE_IO_URING
+            Trace.WriteLine("Adding read on eventfd");
+#endif
             int fd = _eventfd;
             _ring.PrepareReadV(fd, IoVec, 1, userData: AsyncOperation.ReadEventFd(fd).AsUlong());
         }
@@ -69,40 +73,59 @@ namespace IoUring.Transport.Internals
         {
             if (result < 0)
             {
-                var err = -result;
-                if (err == EAGAIN || err == EINTR)
-                {
-                    Debug.WriteLine("polled eventfd for nothing");
-
-                    ReadPollEventFd();
-                    return;
-                }
-
-                ThrowHelper.ThrowNewErrnoException(err);
+                if (HandleCompleteEventFdReadPollError(result)) return;
             }
 
-            Debug.WriteLine("EventFd poll completed");
+#if TRACE_IO_URING
+            Trace.WriteLine("EventFd poll completed");
+#endif
             ReadEventFd();
+        }
+
+        private bool HandleCompleteEventFdReadPollError(int result)
+        {
+            var err = -result;
+            if (err == EAGAIN || err == EINTR)
+            {
+#if TRACE_IO_URING
+                    Trace.WriteLine("polled eventfd for nothing");
+#endif
+
+                ReadPollEventFd();
+                return true;
+            }
+
+            ThrowHelper.ThrowNewErrnoException(err);
+            return false;
         }
 
         private void CompleteEventFdRead(int result)
         {
             if (result < 0)
             {
-                var err = -result;
-                if (err == EAGAIN || err == EINTR)
-                {
-                    Debug.WriteLine("read eventfd for nothing");
-
-                    ReadEventFd();
-                    return;
-                }
-
-                ThrowHelper.ThrowNewErrnoException(err);
+                if (HandleCompleteEventFdReadError(result)) return;
             }
 
-            Debug.WriteLine("EventFd read completed");
+#if TRACE_IO_URING
+            Trace.WriteLine("EventFd read completed");
+#endif
             ReadPollEventFd();
+        }
+
+        private bool HandleCompleteEventFdReadError(int result)
+        {
+            var err = -result;
+            if (err == EAGAIN || err == EINTR)
+            {
+#if TRACE_IO_URING
+                    Trace.WriteLine("read eventfd for nothing");
+#endif
+                ReadEventFd();
+                return true;
+            }
+
+            ThrowHelper.ThrowNewErrnoException(err);
+            return false;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -125,7 +148,9 @@ namespace IoUring.Transport.Internals
 
         private void Unblock()
         {
-            Debug.WriteLine("Attempting to unblock thread on ring");
+#if TRACE_IO_URING
+            Trace.WriteLine("Attempting to unblock thread on ring");
+#endif
 
             byte* val = stackalloc byte[sizeof(ulong)];
             Unsafe.WriteUnaligned(val, 1UL);

@@ -1,5 +1,7 @@
 ﻿using System;
+using System.Buffers;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using Microsoft.AspNetCore.Connections;
 using static Tmds.Linux.LibC;
 
@@ -10,7 +12,9 @@ namespace IoUring.Transport.Internals
         public void WritePoll(Ring ring)
         {
             int socket = Socket;
-            Debug.WriteLine($"Adding write poll on {socket}");
+#if TRACE_IO_URING
+            Trace.WriteLine($"Adding write poll on {socket}");
+#endif
             ring.PreparePollAdd(socket, (ushort) POLLOUT, AsyncOperation.WritePollFor(socket).AsUlong());
             SetFlag(ConnectionState.PollingWrite);
         }
@@ -20,25 +24,36 @@ namespace IoUring.Transport.Internals
             RemoveFlag(ConnectionState.PollingWrite);
             if (result >= 0)
             {
-                Debug.WriteLine($"Completed write poll on {(int)Socket}");
+#if TRACE_IO_URING
+                Trace.WriteLine($"Completed write poll on {(int)Socket}");
+#endif
                 Write(ring);
             }
             else
             {
-                var err = -result;
-                if (err == EAGAIN || err == EWOULDBLOCK || err == EINTR)
-                {
-                    Debug.WriteLine("Polled write for nothing");
-                    WritePoll(ring);
-                }
-                else if (HasFlag(ConnectionState.WriteCancelled) && err == ECANCELED)
-                {
-                    Debug.WriteLine("Write poll was cancelled");
-                }
-                else
-                {
-                    CompleteOutbound(ring, new ErrnoException(err));
-                }
+                HandleCompleteWritePollError(ring, result);
+            }
+        }
+
+        private void HandleCompleteWritePollError(Ring ring, int result)
+        {
+            var err = -result;
+            if (err == EAGAIN || err == EWOULDBLOCK || err == EINTR)
+            {
+#if TRACE_IO_URING
+                Trace.WriteLine("Polled write for nothing");
+#endif
+                WritePoll(ring);
+            }
+            else if (HasFlag(ConnectionState.WriteCancelled) && err == ECANCELED)
+            {
+#if TRACE_IO_URING
+                Trace.WriteLine("Write poll was cancelled");
+#endif
+            }
+            else
+            {
+                CompleteOutbound(ring, new ErrnoException(err));
             }
         }
 
@@ -64,7 +79,9 @@ namespace IoUring.Transport.Internals
 
             LastWrite = buffer;
             int socket = Socket;
-            Debug.WriteLine($"Adding write on {socket}");
+#if TRACE_IO_URING
+            Trace.WriteLine($"Adding write on {socket}");
+#endif
             ring.PrepareWriteV(socket, writeVecs ,ctr, 0 ,0, AsyncOperation.WriteTo(socket).AsUlong());
             SetFlag(ConnectionState.Writing);
         }
@@ -83,29 +100,43 @@ namespace IoUring.Transport.Internals
                 SequencePosition end;
                 if (result == 0)
                 {
-                    Debug.WriteLine($"Wrote {result} bytes to {(int)Socket}");
+#if TRACE_IO_URING
+                    Trace.WriteLine($"Wrote {result} bytes to {(int)Socket}");
+#endif
                     end = lastWrite.Start;
                 }
                 else if (lastWrite.Length == result)
                 {
-                    Debug.WriteLine($"Wrote all {result} bytes to {(int)Socket}");
+#if TRACE_IO_URING
+                    Trace.WriteLine($"Wrote all {result} bytes to {(int)Socket}");
+#endif
                     end = lastWrite.End;
                 }
                 else
                 {
-                    Debug.WriteLine($"Wrote some {result} bytes to {(int)Socket}");
+#if TRACE_IO_URING
+                    Trace.WriteLine($"Wrote some {result} bytes to {(int)Socket}");
+#endif
                     end = lastWrite.GetPosition(result);
                 }
 
                 Outbound.AdvanceTo(end);
                 ReadFromApp(ring);
-                return;
             }
+            else
+            {
+                HandleCompleteWriteError(ring, result, lastWrite);
+            }
+        }
 
+        private void HandleCompleteWriteError(Ring ring, int result, ReadOnlySequence<byte> lastWrite)
+        {
             var err = -result;
             if (err == EAGAIN || err == EWOULDBLOCK || err == EINTR)
             {
-                Debug.WriteLine("Wrote for nothing");
+#if TRACE_IO_URING
+                Trace.WriteLine("Wrote for nothing");
+#endif
                 Outbound.AdvanceTo(lastWrite.Start);
                 ReadFromApp(ring);
                 return;
@@ -113,7 +144,9 @@ namespace IoUring.Transport.Internals
 
             if (HasFlag(ConnectionState.WriteCancelled) && err == ECANCELED)
             {
-                Debug.WriteLine("Write was cancelled");
+#if TRACE_IO_URING
+                Trace.WriteLine("Write was cancelled");
+#endif
                 return;
             }
 
@@ -137,7 +170,9 @@ namespace IoUring.Transport.Internals
             if (result.CompletedSuccessfully)
             {
                 // unlikely
-                Debug.WriteLine($"Read from app for {(int)Socket} synchronously");
+#if TRACE_IO_URING
+                Trace.WriteLine($"Read from app for {(int)Socket} synchronously");
+#endif
                 WritePoll(ring);
             }
             else if (result.CompletedExceptionally)
@@ -159,6 +194,7 @@ namespace IoUring.Transport.Internals
             return default;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private AsyncOperationResult HandleReadFromApp(bool onTransportThread = false)
         {
             Exception error = null;
@@ -189,7 +225,9 @@ namespace IoUring.Transport.Internals
             }
             else
             {
-                Debug.WriteLine($"Read from app for {(int)Socket} asynchronously");
+#if TRACE_IO_URING
+                Trace.WriteLine($"Read from app for {(int)Socket} asynchronously");
+#endif
                 _scheduler.ScheduleAsyncWrite(Socket);
             }
 

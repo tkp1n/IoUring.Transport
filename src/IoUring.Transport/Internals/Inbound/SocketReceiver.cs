@@ -38,7 +38,9 @@ namespace IoUring.Transport.Internals.Inbound
         public void PollReceive(Ring ring)
         {
             int socket = _recipient;
-            Debug.WriteLine($"Adding poll to receive sockets via {socket}");
+#if TRACE_IO_URING
+            Trace.WriteLine($"Adding poll to receive sockets via {socket}");
+#endif
             ring.PreparePollAdd(socket, (ushort) POLLIN, AsyncOperation.RecvSocketPoll(socket).AsUlong());
         }
 
@@ -46,25 +48,36 @@ namespace IoUring.Transport.Internals.Inbound
         {
             if (result >= 0)
             {
-                Debug.WriteLine($"Completed poll to receive socket via {(int)_recipient}");
+#if TRACE_IO_URING
+                Trace.WriteLine($"Completed poll to receive socket via {(int)_recipient}");
+#endif
                 Receive(ring);
             }
             else
             {
-                var err = -result;
-                if (err == EAGAIN || err == EWOULDBLOCK || err == EINTR)
-                {
-                    Debug.WriteLine("Polled to receive socket for nothing");
-                    PollReceive(ring);
-                }
-                else if (err == ECONNRESET && _disposed)
-                {
-                    Debug.WriteLine("Poll to receive socket was cancelled");
-                }
-                else
-                {
-                    ThrowHelper.ThrowNewErrnoException(err);
-                }
+                HandleCompleteReceivePollError(ring, result);
+            }
+        }
+
+        private void HandleCompleteReceivePollError(Ring ring, int result)
+        {
+            var err = -result;
+            if (err == EAGAIN || err == EWOULDBLOCK || err == EINTR)
+            {
+#if TRACE_IO_URING
+                Trace.WriteLine("Polled to receive socket for nothing");
+#endif
+                PollReceive(ring);
+            }
+            else if (err == ECONNRESET && _disposed)
+            {
+#if TRACE_IO_URING
+                Trace.WriteLine("Poll to receive socket was cancelled");
+#endif
+            }
+            else
+            {
+                ThrowHelper.ThrowNewErrnoException(err);
             }
         }
 
@@ -90,7 +103,7 @@ namespace IoUring.Transport.Internals.Inbound
             header->msg_controllen = _control.Length;
 
             int socket = _recipient;
-            Debug.WriteLine($"Adding recvmsg to receive socket via {socket}");
+            Trace.WriteLine($"Adding recvmsg to receive socket via {socket}");
             ring.PrepareRecvMsg(socket, header, (uint)(MSG_NOSIGNAL | MSG_CMSG_CLOEXEC), AsyncOperation.RecvSocket(socket).AsUlong());
             */
             ring.PrepareNop(AsyncOperation.RecvSocket(_recipient).AsUlong());
@@ -118,7 +131,9 @@ namespace IoUring.Transport.Internals.Inbound
             header->msg_controllen = _control.Length;
 
             LinuxSocket recipient = _recipient;
-            Debug.WriteLine($"Adding recvmsg to receive socket via {recipient}");
+#if TRACE_IO_URING
+            Trace.WriteLine($"Adding recvmsg to receive socket via {recipient}");
+#endif
 
             result = recipient.RecvMsg(header, (MSG_NOSIGNAL | MSG_CMSG_CLOEXEC));
             // End of work-around for https://github.com/axboe/liburing/issues/128
@@ -132,7 +147,9 @@ namespace IoUring.Transport.Internals.Inbound
                 {
                     if (cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_RIGHTS)
                     {
-                        Debug.WriteLine($"Received socket from {(int) _recipient}");
+#if TRACE_IO_URING
+                        Trace.WriteLine($"Received socket from {(int) _recipient}");
+#endif
                         int* fdptr = (int*)CMSG_DATA(cmsg);
                         socket = *fdptr;
                         socket.SetFlag(O_NONBLOCK);
@@ -148,10 +165,12 @@ namespace IoUring.Transport.Internals.Inbound
                     {
                         PollReceive(ring);
                     }
+#if TRACE_IO_URING
                     else
                     {
-                        Debug.WriteLine($"Socket recipient {(int) _recipient} closed");
+                        Trace.WriteLine($"Socket recipient {(int) _recipient} closed");
                     }
+#endif
 
                     return false;
                 }
@@ -160,22 +179,31 @@ namespace IoUring.Transport.Internals.Inbound
                 return true;
             }
 
+            HandleCompleteReceiveError(ring, result);
+
+            return false;
+        }
+
+        private void HandleCompleteReceiveError(Ring ring, int result)
+        {
             int err = -result;
             if (err == EAGAIN || err == EWOULDBLOCK || err == EINTR)
             {
-                Debug.WriteLine("Recevied socket for nothing");
+#if TRACE_IO_URING
+                Trace.WriteLine("Recevied socket for nothing");
+#endif
                 Receive(ring);
             }
             else if (err == ECONNRESET && _disposed)
             {
-                Debug.WriteLine("Receiving socket was cancelled");
+#if TRACE_IO_URING
+                Trace.WriteLine("Receiving socket was cancelled");
+#endif
             }
             else
             {
                 ThrowHelper.ThrowNewErrnoException(err);
             }
-
-            return false;
         }
 
         public void Dispose()

@@ -49,7 +49,9 @@ namespace IoUring.Transport.Internals.Inbound
                 _state = ConnectionListenerState.Binding;
             }
 
-            Debug.WriteLine($"Binding ConnectionListener for {EndPoint}");
+#if TRACE_IO_URING
+            Trace.WriteLine($"Binding ConnectionListener for {EndPoint}");
+#endif
 
             try
             {
@@ -100,7 +102,9 @@ namespace IoUring.Transport.Internals.Inbound
                 if (_state != ConnectionListenerState.Bound) ThrowHelper.ThrowNewInvalidOperationException();
             }
 
-            Debug.WriteLine($"Accepting on ConnectionListener for {EndPoint}");
+#if TRACE_IO_URING
+            Trace.WriteLine($"Accepting on ConnectionListener for {EndPoint}");
+#endif
 
             await foreach (var connection in _acceptQueue.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
             {
@@ -119,7 +123,9 @@ namespace IoUring.Transport.Internals.Inbound
                 _state = ConnectionListenerState.Unbinding;
             }
 
-            Debug.WriteLine($"Unbinding ConnectionListener for {EndPoint}");
+#if TRACE_IO_URING
+            Trace.WriteLine($"Unbinding ConnectionListener for {EndPoint}");
+#endif
 
             try
             {
@@ -164,7 +170,9 @@ namespace IoUring.Transport.Internals.Inbound
                 _state = ConnectionListenerState.Disposing;
             }
 
-            Debug.WriteLine($"Disposing ConnectionListener for {EndPoint}");
+#if TRACE_IO_URING
+            Trace.WriteLine($"Disposing ConnectionListener for {EndPoint}");
+#endif
 
             _acceptQueue.Writer.TryComplete();
             _transport.DecrementThreadRefCount();

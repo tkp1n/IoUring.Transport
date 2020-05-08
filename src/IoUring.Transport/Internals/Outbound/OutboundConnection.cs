@@ -90,23 +90,21 @@ namespace IoUring.Transport.Internals.Outbound
         {
             if (result < 0)
             {
-                if (HandleCompleteConnectError(ring, result)) return;
+                HandleCompleteConnectError(ring, result);
+                return;
             }
-            else
-            {
+
 #if TRACE_IO_URING
-                Trace.WriteLine($"Connected to {Socket}");
+            Trace.WriteLine($"Connected to {Socket}");
 #endif
-                var ep = Socket.GetLocalAddress();
-                LocalEndPoint = ep ?? RemoteEndPoint;
+            var ep = Socket.GetLocalAddress();
+            LocalEndPoint = ep ?? RemoteEndPoint;
 
-                _connectCompletion.TrySetResult(this);
-            }
-
+            _connectCompletion.TrySetResult(this);
             _connectCompletion = null;
         }
 
-        private bool HandleCompleteConnectError(Ring ring, int result)
+        private void HandleCompleteConnectError(Ring ring, int result)
         {
             if (-result == EAGAIN && -result == EINTR)
             {
@@ -114,11 +112,11 @@ namespace IoUring.Transport.Internals.Outbound
                 Trace.WriteLine($"Connected for nothing to {Socket}");
 #endif
                 Connect(ring);
-                return true;
             }
-
-            _connectCompletion.TrySetException(new ErrnoException(-result));
-            return false;
+            else
+            {
+                _connectCompletion.TrySetException(new ErrnoException(-result));
+            }
         }
     }
 }

@@ -166,8 +166,8 @@ namespace IoUring.Transport.Internals
 #if TRACE_IO_URING
             Trace.WriteLine($"Disposing {Socket}");
 #endif
-            Transport.Input.Complete();
-            Transport.Output.Complete();
+            await Transport.Input.CompleteAsync();
+            await Transport.Output.CompleteAsync();
 
             Abort();
 

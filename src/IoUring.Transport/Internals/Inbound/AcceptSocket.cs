@@ -99,17 +99,16 @@ namespace IoUring.Transport.Internals.Inbound
 
         public void CompleteAcceptPoll(Ring ring, int result)
         {
-            if (result >= 0)
+            if (result < 0)
             {
+                HandleCompleteAcceptPollError(ring, result);
+                return;
+            }
+
 #if TRACE_IO_URING
                 Trace.WriteLine($"Completed accept poll on {(int)Socket}");
 #endif
-                Accept(ring);
-            }
-            else
-            {
-                HandleCompleteAcceptPollError(ring, result);
-            }
+            Accept(ring);
         }
 
         private void HandleCompleteAcceptPollError(Ring ring, int result)
@@ -155,7 +154,8 @@ namespace IoUring.Transport.Internals.Inbound
             socket = default;
             if (result < 0)
             {
-                if (!HandleCompleteAcceptSocketError(ring, result)) return false;
+                HandleCompleteAcceptSocketError(ring, result);
+                return false;
             }
 
 #if TRACE_IO_URING
@@ -165,7 +165,7 @@ namespace IoUring.Transport.Internals.Inbound
             return true;
         }
 
-        private bool HandleCompleteAcceptSocketError(Ring ring, int result)
+        private void HandleCompleteAcceptSocketError(Ring ring, int result)
         {
             var err = -result;
             if (err == EAGAIN || err == EINTR || err == EMFILE)
@@ -178,8 +178,7 @@ namespace IoUring.Transport.Internals.Inbound
                 {
                     Accept(ring);
                 }
-
-                return false;
+                return;
             }
 
             if (err == ECANCELED && IsUnbinding)
@@ -187,11 +186,10 @@ namespace IoUring.Transport.Internals.Inbound
 #if TRACE_IO_URING
                     Trace.WriteLine("Accept cancelled while unbinding");
 #endif
-                return false;
+                return;
             }
 
             ThrowHelper.ThrowNewErrnoException(err);
-            return true;
         }
 
         public bool TryCompleteAccept(Ring ring, int result, [NotNullWhen(true)] out InboundConnection connection)

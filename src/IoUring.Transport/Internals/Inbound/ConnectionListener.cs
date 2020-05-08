@@ -129,18 +129,17 @@ namespace IoUring.Transport.Internals.Inbound
 
             try
             {
-                switch (EndPoint)
+                if (EndPoint is IPEndPoint ipEndPoint)
                 {
-                    case IPEndPoint ipEndPoint:
-                        var threads = _transport.TransportThreads;
-                        foreach (var thread in threads)
-                        {
-                            await thread.Unbind(ipEndPoint);
-                        }
-                        break;
-                    default:
-                        await _transport.AcceptThread.Unbind(EndPoint);
-                        break;
+                    var threads = _transport.TransportThreads;
+                    foreach (var thread in threads)
+                    {
+                        await thread.Unbind(ipEndPoint);
+                    }
+                }
+                else
+                {
+                    await _transport.AcceptThread.Unbind(EndPoint);
                 }
 
                 _acceptQueue.Writer.TryComplete();

@@ -21,17 +21,16 @@ namespace IoUring.Transport.Internals
         public void CompleteReadPoll(Ring ring, int result)
         {
             RemoveFlag(ConnectionState.PollingRead);
-            if (result >= 0)
-            {
-#if TRACE_IO_URING
-                Trace.WriteLine($"Completed read poll on {(int)Socket}");
-#endif
-                Read(ring);
-            }
-            else
+            if (result < 0)
             {
                 HandleCompleteReadPollError(ring, result);
+                return;
             }
+
+#if TRACE_IO_URING
+            Trace.WriteLine($"Completed read poll on {(int)Socket}");
+#endif
+            Read(ring);
         }
 
         private void HandleCompleteReadPollError(Ring ring, int result)
@@ -83,57 +82,55 @@ namespace IoUring.Transport.Internals
                 readHandle.Dispose();
             }
 
-            if (result > 0)
-            {
-#if TRACE_IO_URING
-                Trace.WriteLine($"Read {result} bytes from {(int)Socket}");
-#endif
-                Inbound.Advance(result);
-                FlushRead(ring);
-            }
-            else
+            if (result <= 0)
             {
                 HandleCompleteReadError(ring, result);
+                return;
             }
+
+#if TRACE_IO_URING
+            Trace.WriteLine($"Read {result} bytes from {(int)Socket}");
+#endif
+            Inbound.Advance(result);
+            FlushRead(ring);
         }
 
         private void HandleCompleteReadError(Ring ring, int result)
         {
             Exception ex;
-            if (result < 0)
+            if (result >= 0)
             {
-                var err = -result;
-                if (err == EAGAIN || err == EWOULDBLOCK || err == EINTR)
-                {
-#if TRACE_IO_URING
-                    Trace.WriteLine("Read for nothing");
-#endif
-                    Read(ring);
-                    return;
-                }
+                // EOF
+                CompleteInbound(ring, null);
+                return;
+            }
 
-                if (HasFlag(ConnectionState.ReadCancelled) && err == ECANCELED)
-                {
+            var err = -result;
+            if (err == EAGAIN || err == EWOULDBLOCK || err == EINTR)
+            {
 #if TRACE_IO_URING
-                    Trace.WriteLine("Read was cancelled");
+                Trace.WriteLine("Read for nothing");
 #endif
-                    return;
-                }
+                Read(ring);
+                return;
+            }
 
-                if (-result == ECONNRESET)
-                {
-                    ex = new ErrnoException(ECONNRESET);
-                    ex = new ConnectionResetException(ex.Message, ex);
-                }
-                else
-                {
-                    ex = new ErrnoException(-result);
-                }
+            if (HasFlag(ConnectionState.ReadCancelled) && err == ECANCELED)
+            {
+#if TRACE_IO_URING
+                Trace.WriteLine("Read was cancelled");
+#endif
+                return;
+            }
+
+            if (-result == ECONNRESET)
+            {
+                ex = new ErrnoException(ECONNRESET);
+                ex = new ConnectionResetException(ex.Message, ex);
             }
             else
             {
-                // EOF
-                ex = null;
+                ex = new ErrnoException(-result);
             }
 
             CompleteInbound(ring, ex);

@@ -1,6 +1,5 @@
 using System;
 using System.Buffers;
-using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Net;
@@ -41,9 +40,6 @@ namespace IoUring.Transport.Internals.Inbound
 
         public static AcceptSocket Bind(IPEndPoint ipEndPoint, ChannelWriter<ConnectionContext> acceptQueue, MemoryPool<byte> memoryPool, IoUringOptions options, TransportThreadScheduler scheduler)
         {
-#if TRACE_IO_URING
-            Trace.WriteLine($"Binding to {ipEndPoint}");
-#endif
             var domain = ipEndPoint.AddressFamily == AddressFamily.InterNetwork ? AF_INET : AF_INET6;
             LinuxSocket s = new LinuxSocket(domain, SOCK_STREAM, IPPROTO_TCP, blocking: true);
             s.SetOption(SOL_SOCKET, SO_REUSEADDR, 1);
@@ -56,9 +52,6 @@ namespace IoUring.Transport.Internals.Inbound
 
         public static AcceptSocket Bind(UnixDomainSocketEndPoint unixDomainSocketEndPoint, ChannelWriter<ConnectionContext> acceptQueue, IoUringOptions options)
         {
-#if TRACE_IO_URING
-            Trace.WriteLine($"Binding to {unixDomainSocketEndPoint}");
-#endif
             var socketPath = unixDomainSocketEndPoint.ToString();
             var s = new LinuxSocket(AF_UNIX, SOCK_STREAM, 0, blocking: false);
             File.Delete(socketPath);
@@ -70,9 +63,6 @@ namespace IoUring.Transport.Internals.Inbound
 
         public static AcceptSocket Bind(FileHandleEndPoint fileHandleEndPoint, ChannelWriter<ConnectionContext> acceptQueue, IoUringOptions options)
         {
-#if TRACE_IO_URING
-            Trace.WriteLine($"Binding to {fileHandleEndPoint}");
-#endif
             LinuxSocket s = (int) fileHandleEndPoint.FileHandle;
             var endPoint = s.GetLocalAddress();
             return new AcceptSocket(s, endPoint ?? fileHandleEndPoint, acceptQueue, null, options, null);
@@ -91,9 +81,6 @@ namespace IoUring.Transport.Internals.Inbound
         public void AcceptPoll(Ring ring)
         {
             int socket = Socket;
-#if TRACE_IO_URING
-            Trace.WriteLine($"Polling for accept on {socket}");
-#endif
             ring.PreparePollAdd(socket, (ushort) POLLIN, AsyncOperation.PollAcceptFrom(socket).AsUlong());
         }
 
@@ -105,9 +92,6 @@ namespace IoUring.Transport.Internals.Inbound
                 return;
             }
 
-#if TRACE_IO_URING
-                Trace.WriteLine($"Completed accept poll on {(int)Socket}");
-#endif
             Accept(ring);
         }
 
@@ -116,10 +100,6 @@ namespace IoUring.Transport.Internals.Inbound
             var err = -result;
             if (err == EAGAIN || err == EWOULDBLOCK || err == EINTR)
             {
-#if TRACE_IO_URING
-                    Trace.WriteLine("Polled accept for nothing");
-#endif
-
                 if (!IsUnbinding)
                 {
                     AcceptPoll(ring);
@@ -127,25 +107,18 @@ namespace IoUring.Transport.Internals.Inbound
             }
             else if (err == ECANCELED && IsUnbinding)
             {
-#if TRACE_IO_URING
-                    Trace.WriteLine("Accept cancelled while unbinding");
-#endif
             }
         }
 
         public void Accept(Ring ring)
         {
-            int socket = Socket;
-#if TRACE_IO_URING
-            Trace.WriteLine($"Adding accept on {socket}");
-#endif
-
             if (IsIpSocket)
             {
                 _addr.AsSpan().Clear();
                 *AddrLen = SizeOf.sockaddr_storage;
             }
 
+            int socket = Socket;
             ring.PrepareAccept(socket, Addr, AddrLen, SOCK_NONBLOCK | SOCK_CLOEXEC, AsyncOperation.AcceptFrom(socket).AsUlong());
         }
 
@@ -158,9 +131,6 @@ namespace IoUring.Transport.Internals.Inbound
                 return false;
             }
 
-#if TRACE_IO_URING
-            Trace.WriteLine($"Accepted {result} on {Socket}");
-#endif
             socket = result;
             return true;
         }
@@ -170,26 +140,15 @@ namespace IoUring.Transport.Internals.Inbound
             var err = -result;
             if (err == EAGAIN || err == EINTR || err == EMFILE)
             {
-#if TRACE_IO_URING
-                    Trace.WriteLine($"Accepted for nothing on {Socket}");
-#endif
-
                 if (!IsUnbinding)
                 {
                     Accept(ring);
                 }
-                return;
             }
-
-            if (err == ECANCELED && IsUnbinding)
+            else if (!(err == ECANCELED && IsUnbinding))
             {
-#if TRACE_IO_URING
-                    Trace.WriteLine("Accept cancelled while unbinding");
-#endif
-                return;
+                ThrowHelper.ThrowNewErrnoException(err);
             }
-
-            ThrowHelper.ThrowNewErrnoException(err);
         }
 
         public bool TryCompleteAccept(Ring ring, int result, [NotNullWhen(true)] out InboundConnection connection)
@@ -219,9 +178,6 @@ namespace IoUring.Transport.Internals.Inbound
         {
             IsUnbinding = true;
             int socket = Socket;
-#if TRACE_IO_URING
-            Trace.WriteLine($"Adding async cancel on {socket} to unbind");
-#endif
             ring.PrepareCancel(AsyncOperation.AcceptFrom(Socket).AsUlong(), AsyncOperation.CancelAccept(socket).AsUlong());
         }
 
@@ -229,29 +185,17 @@ namespace IoUring.Transport.Internals.Inbound
         {
             if (ring.Supports(RingOperation.Close))
             {
-#if TRACE_IO_URING
-                Trace.WriteLine($"Adding close on {Socket}");
-#endif
                 ring.PrepareClose(Socket, AsyncOperation.CloseAcceptSocket(Socket).AsUlong());
             }
             else
             {
-#if TRACE_IO_URING
-                Trace.WriteLine($"Closing {Socket}");
-#endif
                 Socket.Close(); // pre v5.6
-#if TRACE_IO_URING
-                Trace.WriteLine($"Adding nop on {Socket}");
-#endif
                 ring.PrepareNop(AsyncOperation.CloseAcceptSocket(Socket).AsUlong());
             }
         }
 
         public void CompleteClose()
         {
-#if TRACE_IO_URING
-            Trace.WriteLine($"Close (unbind) completed for {Socket}");
-#endif
             _unbindCompletion.TrySetResult(null);
         }
     }

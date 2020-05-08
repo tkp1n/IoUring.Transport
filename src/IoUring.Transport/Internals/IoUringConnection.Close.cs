@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Connections;
@@ -10,18 +9,12 @@ namespace IoUring.Transport.Internals
     {
         public void CompleteInbound(Ring ring, Exception error)
         {
-#if TRACE_IO_URING
-            Trace.WriteLine($"Completing inbound half of {Socket}");
-#endif
             Inbound.Complete(error);
             CleanupSocketEnd(ring);
         }
 
         public void CompleteOutbound(Ring ring, Exception error)
         {
-#if TRACE_IO_URING
-            Trace.WriteLine($"Completing outbound half of {Socket}");
-#endif
             Outbound.Complete(error);
             CancelReadFromSocket(ring);
             CleanupSocketEnd(ring);
@@ -37,16 +30,10 @@ namespace IoUring.Transport.Internals
 
             if (HasFlag(flags, ConnectionState.PollingRead))
             {
-#if TRACE_IO_URING
-                Trace.WriteLine($"Cancelling read poll for {Socket}");
-#endif
                 Cancel(ring, AsyncOperation.ReadPollFor(Socket));
             }
             else if (HasFlag(flags, ConnectionState.Reading))
             {
-#if TRACE_IO_URING
-                Trace.WriteLine($"Cancelling read for {Socket}");
-#endif
                 Cancel(ring, AsyncOperation.ReadFrom(Socket));
             }
 
@@ -66,16 +53,10 @@ namespace IoUring.Transport.Internals
 
             if (HasFlag(flags, ConnectionState.PollingWrite))
             {
-#if TRACE_IO_URING
-                Trace.WriteLine($"Cancelling write poll for {Socket}");
-#endif
                 Cancel(ring, AsyncOperation.WritePollFor(Socket));
             }
             else if (HasFlag(flags, ConnectionState.Writing))
             {
-#if TRACE_IO_URING
-                Trace.WriteLine($"Cancelling write for {Socket}");
-#endif
                 Cancel(ring, AsyncOperation.WriteTo(Socket));
             }
 
@@ -111,29 +92,17 @@ namespace IoUring.Transport.Internals
         {
             if (ring.Supports(RingOperation.Close))
             {
-#if TRACE_IO_URING
-                Trace.WriteLine($"Adding close on {Socket}");
-#endif
                 ring.PrepareClose(Socket, AsyncOperation.CloseConnection(Socket).AsUlong());
             }
             else
             {
-#if TRACE_IO_URING
-                Trace.WriteLine($"Closing {Socket}");
-#endif
                 Socket.Close(); // pre v5.6
-#if TRACE_IO_URING
-                Trace.WriteLine($"Adding nop on {Socket}");
-#endif
                 ring.PrepareNop(AsyncOperation.CloseConnection(Socket).AsUlong());
             }
         }
 
         public void CompleteClosed()
         {
-#if TRACE_IO_URING
-            Trace.WriteLine($"Close completed for {Socket}");
-#endif
             ThreadPool.UnsafeQueueUserWorkItem(state => ((IoUringConnection)state).CancelConnectionClosedToken(), this);
         }
 
@@ -146,26 +115,17 @@ namespace IoUring.Transport.Internals
 
         public void Abort(Ring ring, Exception error)
         {
-#if TRACE_IO_URING
-            Trace.WriteLine($"Aborting {Socket}");
-#endif
             Outbound.CancelPendingRead();
             CancelWriteToSocket(ring);
         }
 
         public override void Abort(ConnectionAbortedException abortReason)
         {
-#if TRACE_IO_URING
-            Trace.WriteLine($"Aborting {Socket}");
-#endif
             _scheduler.ScheduleAsyncAbort(Socket, abortReason);
         }
 
         public override async ValueTask DisposeAsync()
         {
-#if TRACE_IO_URING
-            Trace.WriteLine($"Disposing {Socket}");
-#endif
             await Transport.Input.CompleteAsync();
             await Transport.Output.CompleteAsync();
 

@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading.Channels;
@@ -42,10 +41,6 @@ namespace IoUring.Transport.Internals.Inbound
 
         private void Bind(AcceptSocket context)
         {
-#if TRACE_IO_URING_IO_URING
-            Trace.WriteLine($"Binding to new endpoint {context.EndPoint}");
-#endif
-
             var threads = _transportThreads;
             var handlers = new LinuxSocket[threads.Length];
             for (var i = 0; i < threads.Length; i++)
@@ -64,9 +59,6 @@ namespace IoUring.Transport.Internals.Inbound
         {
             if (_acceptSocketsPerEndPoint.TryRemove(endPoint, out var acceptSocket))
             {
-#if TRACE_IO_URING
-                Trace.WriteLine($"Unbinding from {endPoint}");
-#endif
                 _scheduler.ScheduleAsyncUnbind(acceptSocket.Socket);
                 return new ValueTask(acceptSocket.UnbindCompletion);
             }

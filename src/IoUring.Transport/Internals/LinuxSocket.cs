@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using Tmds.Linux;
@@ -172,9 +171,6 @@ namespace IoUring.Transport.Internals
             int *fdptr = (int*)CMSG_DATA(cmsg);
             *fdptr = _fd;
 
-#if TRACE_IO_URING
-            Trace.WriteLine($"Sending accepted socket {_fd} to {recipient}");
-#endif
             recipient.SendMsg(&header, MSG_NOSIGNAL);
             Close();
         }

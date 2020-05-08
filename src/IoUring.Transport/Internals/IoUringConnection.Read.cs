@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Microsoft.AspNetCore.Connections;
 using static Tmds.Linux.LibC;
@@ -11,9 +10,6 @@ namespace IoUring.Transport.Internals
         public void ReadPoll(Ring ring)
         {
             int socket = Socket;
-#if TRACE_IO_URING
-            Trace.WriteLine($"Adding read poll on {Socket}");
-#endif
             ring.PreparePollAdd(socket, (ushort) POLLIN, AsyncOperation.ReadPollFor(socket).AsUlong());
             SetFlag(ConnectionState.PollingRead);
         }
@@ -27,9 +23,6 @@ namespace IoUring.Transport.Internals
                 return;
             }
 
-#if TRACE_IO_URING
-            Trace.WriteLine($"Completed read poll on {(int)Socket}");
-#endif
             Read(ring);
         }
 
@@ -38,18 +31,9 @@ namespace IoUring.Transport.Internals
             var err = -result;
             if (err == EAGAIN || err == EWOULDBLOCK || err == EINTR)
             {
-#if TRACE_IO_URING
-                Trace.WriteLine("Polled read for nothing");
-#endif
                 ReadPoll(ring);
             }
-            else if (HasFlag(ConnectionState.ReadCancelled) && err == ECANCELED)
-            {
-#if TRACE_IO_URING
-                Trace.WriteLine("Read poll was cancelled");
-#endif
-            }
-            else
+            else if (!(err == ECANCELED && HasFlag(ConnectionState.ReadCancelled)))
             {
                 CompleteInbound(ring, new ErrnoException(err));
             }
@@ -67,9 +51,6 @@ namespace IoUring.Transport.Internals
             ReadHandles[0] = handle;
 
             int socket = Socket;
-#if TRACE_IO_URING
-            Trace.WriteLine($"Adding read on {socket}");
-#endif
             ring.PrepareReadV(socket, readVecs, 1, 0, 0, AsyncOperation.ReadFrom(socket).AsUlong());
             SetFlag(ConnectionState.Reading);
         }
@@ -88,9 +69,6 @@ namespace IoUring.Transport.Internals
                 return;
             }
 
-#if TRACE_IO_URING
-            Trace.WriteLine($"Read {result} bytes from {(int)Socket}");
-#endif
             Inbound.Advance(result);
             FlushRead(ring);
         }
@@ -108,18 +86,12 @@ namespace IoUring.Transport.Internals
             var err = -result;
             if (err == EAGAIN || err == EWOULDBLOCK || err == EINTR)
             {
-#if TRACE_IO_URING
-                Trace.WriteLine("Read for nothing");
-#endif
                 Read(ring);
                 return;
             }
 
             if (HasFlag(ConnectionState.ReadCancelled) && err == ECANCELED)
             {
-#if TRACE_IO_URING
-                Trace.WriteLine("Read was cancelled");
-#endif
                 return;
             }
 
@@ -142,9 +114,6 @@ namespace IoUring.Transport.Internals
             if (result.CompletedSuccessfully)
             {
               // likely
-#if TRACE_IO_URING
-                Trace.WriteLine($"Flushed read from {(int)Socket} synchronously");
-#endif
                 ReadPoll(ring);
             }
             else if (result.CompletedExceptionally)
@@ -195,9 +164,6 @@ namespace IoUring.Transport.Internals
             }
             else
             {
-#if TRACE_IO_URING
-                Trace.WriteLine($"Flushed to app for {(int) Socket} asynchronously");
-#endif
                 _scheduler.ScheduleAsyncRead(Socket);
             }
 

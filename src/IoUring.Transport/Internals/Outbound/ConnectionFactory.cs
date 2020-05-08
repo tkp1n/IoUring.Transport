@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
@@ -22,9 +21,6 @@ namespace IoUring.Transport.Internals.Outbound
 
         public ValueTask<ConnectionContext> ConnectAsync(EndPoint endpoint, CancellationToken cancellationToken = default)
         {
-#if TRACE_IO_URING
-            Trace.WriteLine($"Connecting via ConnectionFactory to {endpoint}");
-#endif
             if (Volatile.Read(ref _disposed) == True) ThrowHelper.ThrowNewObjectDisposedException(ThrowHelper.ExceptionArgument.ConnectionFactory);
 
             var threads = _transport.TransportThreads;
@@ -35,9 +31,6 @@ namespace IoUring.Transport.Internals.Outbound
 
         public ValueTask DisposeAsync()
         {
-#if TRACE_IO_URING
-            Trace.WriteLine($"Disposing ConnectionFactory");
-#endif
             if (Interlocked.Exchange(ref _disposed, True) == True)
             {
                 return default;

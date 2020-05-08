@@ -1,6 +1,5 @@
 using System;
 using System.Buffers;
-using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading.Tasks;
@@ -80,9 +79,6 @@ namespace IoUring.Transport.Internals.Outbound
         public unsafe void Connect(Ring ring)
         {
             int socket = Socket;
-#if TRACE_IO_URING
-            Trace.WriteLine($"Connecting to {socket}");
-#endif
             ring.PrepareConnect(socket, Addr, AddrLen, AsyncOperation.ConnectOn(socket).AsUlong());
         }
 
@@ -94,9 +90,6 @@ namespace IoUring.Transport.Internals.Outbound
                 return;
             }
 
-#if TRACE_IO_URING
-            Trace.WriteLine($"Connected to {Socket}");
-#endif
             var ep = Socket.GetLocalAddress();
             LocalEndPoint = ep ?? RemoteEndPoint;
 
@@ -108,9 +101,6 @@ namespace IoUring.Transport.Internals.Outbound
         {
             if (-result == EAGAIN && -result == EINTR)
             {
-#if TRACE_IO_URING
-                Trace.WriteLine($"Connected for nothing to {Socket}");
-#endif
                 Connect(ring);
             }
             else

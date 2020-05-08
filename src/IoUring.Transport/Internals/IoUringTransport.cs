@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using IoUring.Transport.Internals.Inbound;
@@ -79,10 +78,6 @@ namespace IoUring.Transport.Internals
                 acceptThread = _acceptThread;
                 _acceptThread = null;
             }
-
-#if TRACE_IO_URING
-            Trace.WriteLine("Disposing IoUringTransport");
-#endif
 
             if (transportThreads != null)
             {

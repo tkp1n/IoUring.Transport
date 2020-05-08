@@ -2,7 +2,6 @@ using System;
 using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Net;
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
@@ -43,9 +42,6 @@ namespace IoUring.Transport.Internals
 
         public EndPoint Bind(IPEndPoint endpoint, ChannelWriter<ConnectionContext> connectionSource)
         {
-#if TRACE_IO_URING
-            Trace.WriteLine($"Binding to new endpoint {endpoint}");
-#endif
             var context = AcceptSocket.Bind(endpoint, connectionSource, _memoryPool, _options, _scheduler);
             _acceptSocketsPerEndPoint[endpoint] = context;
             _scheduler.ScheduleAsyncBind(context.Socket, context);
@@ -57,9 +53,6 @@ namespace IoUring.Transport.Internals
         {
             if (_acceptSocketsPerEndPoint.TryRemove(endPoint, out var acceptSocket))
             {
-#if TRACE_IO_URING
-                Trace.WriteLine($"Unbinding from {endPoint}");
-#endif
                 _scheduler.ScheduleAsyncUnbind(acceptSocket.Socket);
                 return new ValueTask(acceptSocket.UnbindCompletion);
             }
@@ -266,10 +259,6 @@ namespace IoUring.Transport.Internals
 
         public override async ValueTask DisposeAsync()
         {
-#if TRACE_IO_URING
-            Trace.WriteLine("Disposing TransportThread");
-#endif
-
             foreach (var (endpoint, _) in _acceptSocketsPerEndPoint)
             {
                 await Unbind(endpoint);

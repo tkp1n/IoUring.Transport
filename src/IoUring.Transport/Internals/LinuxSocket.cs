@@ -101,15 +101,11 @@ namespace IoUring.Transport.Internals
             return EndPointFormatter.AddrToIpEndPoint(&addr);
         }
 
-        public unsafe int GetReadableBytes() // TODO avoid if possible
+        public unsafe int GetReadableBytes()
         {
             int readableBytes;
             int rv = ioctl(_fd, FIONREAD, &readableBytes);
-            if (rv == -1)
-            {
-                ThrowHelper.ThrowNewErrnoException();
-            }
-
+            if (rv == -1) ThrowHelper.ThrowNewErrnoException();
             return readableBytes;
         }
 

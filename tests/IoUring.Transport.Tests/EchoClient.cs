@@ -18,20 +18,30 @@ namespace IoUring.Transport.Tests
             _socket.Connect(endPoint);
         }
 
-        public async Task ExchangeData()
+        public async Task ExchangeData(int length)
         {
-            var sendBuffer = ArrayPool<byte>.Shared.Rent(1024);
-            var sendMemory = new Memory<byte>(sendBuffer, 0, 1024);
+            int sentTotal = 0;
+            int receivedTotal = 0;
+
+            var sendBuffer = ArrayPool<byte>.Shared.Rent(length);
+            var recvBuffer = ArrayPool<byte>.Shared.Rent(length);
+
             new Random().NextBytes(sendBuffer);
 
-            var recvBuffer = ArrayPool<byte>.Shared.Rent(1024);
-            var recvMemory = new Memory<byte>(recvBuffer, 0, 1024);
+            while (receivedTotal < length)
+            {
+                var sendMemory = new Memory<byte>(sendBuffer, sentTotal, length - sentTotal);
+                var recvMemory = new Memory<byte>(recvBuffer, receivedTotal, length - receivedTotal);
 
-            var sent = await _socket.SendAsync(sendMemory, SocketFlags.None);
-            var received = await _socket.ReceiveAsync(recvMemory, SocketFlags.None);
+                var sent = await _socket.SendAsync(sendMemory, SocketFlags.None);
+                var received = await _socket.ReceiveAsync(recvMemory, SocketFlags.None);
 
-            Assert.True(received <= sent);
-            Assert.True(sendBuffer.AsSpan(0, received).SequenceEqual(recvBuffer.AsSpan(0, received)));
+                sentTotal += sent;
+                receivedTotal += received;
+            }
+
+            Assert.Equal(sentTotal, receivedTotal);
+            Assert.True(sendBuffer.AsSpan(0, length).SequenceEqual(recvBuffer.AsSpan(0, length)));
         }
 
         public void Close() => _socket.Close();

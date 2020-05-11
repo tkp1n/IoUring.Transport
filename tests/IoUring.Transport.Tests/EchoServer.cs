@@ -62,10 +62,16 @@ namespace IoUring.Transport.Tests
                 while (!_disposed)
                 {
                     int received = await socket.ReceiveAsync(memory, SocketFlags.None, _cts.Token);
+                    if (received == 0) break;
+
                     _output.WriteLine($"Received {received} bytes from {socket.RemoteEndPoint}");
 
-                    await socket.SendAsync(memory.Slice(0, received), SocketFlags.None, _cts.Token);
-                    _output.WriteLine($"Sent data back to {socket.RemoteEndPoint}");
+                    var sentTotal = 0;
+                    while (sentTotal < received)
+                    {
+                        sentTotal += await socket.SendAsync(memory.Slice(sentTotal, received - sentTotal), SocketFlags.None, _cts.Token);
+                        _output.WriteLine($"Sent {sentTotal} back to {socket.RemoteEndPoint}");
+                    }
                 }
 
                 ArrayPool<byte>.Shared.Return(buffer);

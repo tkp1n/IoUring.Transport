@@ -16,6 +16,7 @@ namespace IoUring.Transport.Tests
 {
     public class ConnectionFactoryTests
     {
+        private static readonly MemoryPool<byte> _memoryPool = new SlabMemoryPool();
         public ConnectionFactoryTests(ITestOutputHelper outputHelper)
         {
             OutputHelper = outputHelper;
@@ -23,26 +24,38 @@ namespace IoUring.Transport.Tests
 
         private ITestOutputHelper OutputHelper { get; }
 
-        private static readonly EndPoint[] EndPoints =
+        private static readonly Func<EndPoint>[] EndPoints =
         {
-            new IPEndPoint(IPAddress.Parse("127.0.0.1"), 0),
-            new IPEndPoint(IPAddress.Parse("::1"), 0),
-            new UnixDomainSocketEndPoint($"{Path.GetTempPath()}/{Path.GetRandomFileName()}")
+            () => new IPEndPoint(IPAddress.Parse("127.0.0.1"), 0),
+            () => new IPEndPoint(IPAddress.Parse("::1"), 0),
+            () => new UnixDomainSocketEndPoint($"{Path.GetTempPath()}/{Path.GetRandomFileName()}")
+        };
+
+        private static readonly int[] Lengths =
+        {
+            1,
+            _memoryPool.MaxBufferSize - 1,
+            _memoryPool.MaxBufferSize,
+            _memoryPool.MaxBufferSize + 1,
+            (8 * _memoryPool.MaxBufferSize) - 1,
+            (8 * _memoryPool.MaxBufferSize),
+            (8 * _memoryPool.MaxBufferSize) + 1,
         };
 
         public static IEnumerable<object[]> Data()
         {
             foreach (var endpoint in EndPoints)
+            foreach (var length in Lengths)
             {
-                yield return new object[] { endpoint };
+                yield return new object[] { endpoint, length };
             }
         }
 
         [Theory]
         [MemberData(nameof(Data))]
-        public async void SmokeTest(EndPoint endpoint)
+        public async void SmokeTest(Func<EndPoint> endpoint, int length)
         {
-            using var server = new EchoServer(endpoint, OutputHelper);
+            using var server = new EchoServer(endpoint(), OutputHelper);
 
             var transport = new IoUringTransport(Options.Create(new IoUringOptions()));
             var connectionFactory = new ConnectionFactory(transport);
@@ -55,7 +68,7 @@ namespace IoUring.Transport.Tests
 
                     for (int j = 0; j < 3; j++)
                     {
-                        await SendReceiveData(connection.Transport);
+                        await SendReceiveData(connection.Transport, length);
                     }
 
                     await connection.Transport.Output.CompleteAsync();
@@ -71,28 +84,33 @@ namespace IoUring.Transport.Tests
             }
         }
 
-        private async Task SendReceiveData(IDuplexPipe transport)
+        private async Task SendReceiveData(IDuplexPipe transport, int length)
         {
-            var sendBuffer = ArrayPool<byte>.Shared.Rent(1024);
+            var sendBuffer = ArrayPool<byte>.Shared.Rent(length);
             new Random().NextBytes(sendBuffer);
 
-            var sendResult = await transport.Output.WriteAsync(new ReadOnlyMemory<byte>(sendBuffer, 0, 1024));
+            var sendResult = await transport.Output.WriteAsync(new ReadOnlyMemory<byte>(sendBuffer, 0, length));
             Assert.False(sendResult.IsCompleted);
             Assert.False(sendResult.IsCanceled);
 
-            if (!transport.Input.TryRead(out var recvResult))
+            int received = 0;
+            var recvTotalBuffer = ArrayPool<byte>.Shared.Rent(length);
+            while (received < length)
             {
-                recvResult = await transport.Input.ReadAsync();
+                var recvResult = await transport.Input.ReadAsync();
+
+                Assert.False(recvResult.IsCompleted);
+                Assert.False(recvResult.IsCanceled);
+                var recvBuffer = recvResult.Buffer;
+                recvBuffer.CopyTo(recvTotalBuffer.AsSpan(received));
+                received += (int) recvBuffer.Length;
+
+                transport.Input.AdvanceTo(recvResult.Buffer.End);
             }
 
-            Assert.False(recvResult.IsCompleted);
-            Assert.False(recvResult.IsCanceled);
-            var recvBuffer = recvResult.Buffer.ToArray();
-
-            transport.Input.AdvanceTo(recvResult.Buffer.End);
-
-            Assert.True(sendBuffer.AsSpan(0, 1024).SequenceEqual(recvBuffer.AsSpan(0, 1024)));
+            Assert.True(sendBuffer.AsSpan(0, length).SequenceEqual(recvTotalBuffer.AsSpan(0, length)));
             ArrayPool<byte>.Shared.Return(sendBuffer);
+            ArrayPool<byte>.Shared.Return(recvTotalBuffer);
         }
     }
 }

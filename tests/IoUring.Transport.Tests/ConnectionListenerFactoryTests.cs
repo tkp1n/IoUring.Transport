@@ -15,7 +15,7 @@ namespace IoUring.Transport.Tests
 {
     public class ConnectionListenerFactoryTests
     {
-        private static MemoryPool<byte> _memoryPool = new SlabMemoryPool();
+        private static readonly MemoryPool<byte> _memoryPool = new SlabMemoryPool();
         private static readonly EndPoint[] EndPoints =
         {
             new IPEndPoint(IPAddress.Parse("127.0.0.1"), 0),

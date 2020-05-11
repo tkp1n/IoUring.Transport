@@ -91,7 +91,7 @@ namespace IoUring.Transport.Internals
                 memoryRequirement -= memory.Length;
             }
 
-            _state = (short) (advanced & 0xFFFF); // Store already advanced number of bytes, to determine amount to advance after read.
+            _state = advanced; // Store already advanced number of bytes, to determine amount to advance after read.
 
             if (memoryRequirement > 0)
             {
@@ -136,7 +136,7 @@ namespace IoUring.Transport.Internals
             }
 
             Inbound.Advance((int) toAdvance);
-            _state = (short) (result & 0xFFFF); // Store result as State to determine memory requirements for next read
+            _state = result; // Store result as State to determine memory requirements for next read
             FlushRead(ring);
         }
 

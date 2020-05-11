@@ -66,11 +66,12 @@ namespace IoUring.Transport.Internals
             SetFlag(ConnectionState.Writing);
         }
 
-        public void CompleteWrite(Ring ring, int result)
+        public unsafe void CompleteWrite(Ring ring, int result)
         {
             RemoveFlag(ConnectionState.Writing);
             foreach (var writeHandle in WriteHandles)
             {
+                if (writeHandle.Pointer == (void*)IntPtr.Zero) break;
                 writeHandle.Dispose();
             }
 

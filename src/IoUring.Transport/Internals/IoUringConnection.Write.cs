@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Buffers;
 using System.Runtime.CompilerServices;
 using Microsoft.AspNetCore.Connections;
 using static Tmds.Linux.LibC;
@@ -24,7 +23,9 @@ namespace IoUring.Transport.Internals
                 return;
             }
 
-            Write(ring);
+            var ioVecs = PrepareWriteIoVecs();
+            _writeIoVecsInUse = (byte) ioVecs;
+            Write(ring, ioVecs);
         }
 
         private void HandleCompleteWritePollError(Ring ring, int result)
@@ -40,7 +41,7 @@ namespace IoUring.Transport.Internals
             }
         }
 
-        private unsafe void Write(Ring ring)
+        private unsafe int PrepareWriteIoVecs()
         {
             var buffer = ReadResult;
 
@@ -61,28 +62,33 @@ namespace IoUring.Transport.Internals
             }
 
             LastWrite = buffer;
+            return ctr;
+        }
+
+        private unsafe void Write(Ring ring, int ioVecs)
+        {
             int socket = Socket;
-            ring.PrepareWriteV(socket, writeVecs ,ctr, 0 ,0, AsyncOperation.WriteTo(socket).AsUlong());
+            ring.PrepareWriteV(socket, WriteVecs, ioVecs, 0 ,0, AsyncOperation.WriteTo(socket).AsUlong());
             SetFlag(ConnectionState.Writing);
         }
 
-        public unsafe void CompleteWrite(Ring ring, int result)
+        public void CompleteWrite(Ring ring, int result)
         {
             RemoveFlag(ConnectionState.Writing);
-            foreach (var writeHandle in WriteHandles)
-            {
-                if (writeHandle.Pointer == (void*)IntPtr.Zero) break;
-                writeHandle.Dispose();
-            }
-
-            var lastWrite = LastWrite;
             if (result < 0)
             {
-                HandleCompleteWriteError(ring, result, lastWrite);
+                if (!HandleCompleteWriteError(ring, result))
+                {
+                    DisposeWriteHandles();
+                }
+
                 return;
             }
 
+            DisposeWriteHandles();
+
             SequencePosition end;
+            var lastWrite = LastWrite;
             if (result == 0)
             {
                 end = lastWrite.Start;
@@ -100,19 +106,18 @@ namespace IoUring.Transport.Internals
             ReadFromApp(ring);
         }
 
-        private void HandleCompleteWriteError(Ring ring, int result, ReadOnlySequence<byte> lastWrite)
+        private bool HandleCompleteWriteError(Ring ring, int result)
         {
             var err = -result;
             if (err == EAGAIN || err == EWOULDBLOCK || err == EINTR)
             {
-                Outbound.AdvanceTo(lastWrite.Start);
-                ReadFromApp(ring);
-                return;
+                Write(ring, _writeIoVecsInUse);
+                return true;
             }
 
             if (HasFlag(ConnectionState.WriteCancelled) && err == ECANCELED)
             {
-                return;
+                return false;
             }
 
             Exception ex;
@@ -127,6 +132,16 @@ namespace IoUring.Transport.Internals
             }
 
             CompleteOutbound(ring, ex);
+            return false;
+        }
+
+        private unsafe void DisposeWriteHandles()
+        {
+            foreach (var writeHandle in WriteHandles)
+            {
+                if (writeHandle.Pointer == (void*) IntPtr.Zero) break;
+                writeHandle.Dispose();
+            }
         }
 
         public void ReadFromApp(Ring ring)

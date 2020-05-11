@@ -48,7 +48,8 @@ namespace IoUring.Transport.Internals
         private readonly TaskCompletionSource<object> _waitForConnectionClosedTcs;
 
         private ConnectionState _flags;
-        private byte _ioVecsInUse;
+        private byte _readIoVecsInUse;
+        private byte _writeIoVecsInUse;
         private int _state;
 
         protected IoUringConnection(LinuxSocket socket, EndPoint local, EndPoint remote, MemoryPool<byte> memoryPool, IoUringOptions options, TransportThreadScheduler scheduler)

@@ -24,8 +24,8 @@ namespace IoUring.Transport.Internals
             }
 
             int memoryRequirement = DetermineReadAllocation();
-            int ioVecs = PrepareIoVecs(memoryRequirement);
-            _ioVecsInUse = (byte) ioVecs;
+            int ioVecs = PrepareReadIoVecs(memoryRequirement);
+            _readIoVecsInUse = (byte) ioVecs;
             Read(ring, ioVecs);
         }
 
@@ -67,7 +67,7 @@ namespace IoUring.Transport.Internals
             return reserve;
         }
 
-        private unsafe int PrepareIoVecs(int memoryRequirement)
+        private unsafe int PrepareReadIoVecs(int memoryRequirement)
         {
             int maxBufferSize = MemoryPool.MaxBufferSize;
             memoryRequirement = Math.Min(memoryRequirement, maxBufferSize * ReadIOVecCount);
@@ -143,7 +143,6 @@ namespace IoUring.Transport.Internals
         // Returns whether the read handles are still needed
         private bool HandleCompleteReadError(Ring ring, int result)
         {
-            Exception ex;
             if (result == 0)
             {
                 // EOF
@@ -154,7 +153,7 @@ namespace IoUring.Transport.Internals
             var err = -result;
             if (err == EAGAIN || err == EWOULDBLOCK || err == EINTR)
             {
-                Read(ring, _ioVecsInUse);
+                Read(ring, _readIoVecsInUse);
                 return true;
             }
 
@@ -163,14 +162,15 @@ namespace IoUring.Transport.Internals
                 return false;
             }
 
-            if (-result == ECONNRESET)
+            Exception ex;
+            if (err == ECONNRESET)
             {
                 ex = new ErrnoException(ECONNRESET);
                 ex = new ConnectionResetException(ex.Message, ex);
             }
             else
             {
-                ex = new ErrnoException(-result);
+                ex = new ErrnoException(err);
             }
 
             CompleteInbound(ring, ex);

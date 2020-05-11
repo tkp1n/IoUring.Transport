@@ -11,21 +11,21 @@ using Tmds.Linux;
 namespace IoUring.Transport.Internals
 {
     [Flags]
-    internal enum ConnectionState
+    internal enum ConnectionState : byte
     {
-        PollingRead     = 1 << 0,
-        Reading         = 1 << 1,
-        PollingWrite    = 1 << 2,
-        Writing         = 1 << 3,
-        ReadCancelled   = 1 << 4,
-        WriteCancelled  = 1 << 5,
-        HalfClosed      = 1 << 6,
-        Closed          = 1 << 7
+        PollingRead     = 0x01,
+        Reading         = 0x02,
+        PollingWrite    = 0x04,
+        Writing         = 0x08,
+        ReadCancelled   = 0x10,
+        WriteCancelled  = 0x20,
+        HalfClosed      = 0x40,
+        Closed          = 0x80
     }
 
     internal abstract partial class IoUringConnection : TransportConnection
     {
-        private const int ReadIOVecCount = 1;
+        private const int ReadIOVecCount = 8;
         private const int WriteIOVecCount = 8;
 
         // Copied from LibuvTransportOptions.MaxReadBufferSize
@@ -46,6 +46,10 @@ namespace IoUring.Transport.Internals
 
         private readonly CancellationTokenSource _connectionClosedTokenSource;
         private readonly TaskCompletionSource<object> _waitForConnectionClosedTcs;
+
+        private ConnectionState _flags;
+        private byte _ioVecsInUse;
+        private short _state;
 
         protected IoUringConnection(LinuxSocket socket, EndPoint local, EndPoint remote, MemoryPool<byte> memoryPool, IoUringOptions options, TransportThreadScheduler scheduler)
         {
@@ -84,8 +88,6 @@ namespace IoUring.Transport.Internals
 
         public override MemoryPool<byte> MemoryPool { get; }
 
-        private ConnectionState Flags { get; set; }
-
         private unsafe iovec* ReadVecs => _iovec;
         private unsafe iovec* WriteVecs => _iovec + ReadIOVecCount;
 
@@ -105,9 +107,9 @@ namespace IoUring.Transport.Internals
         private ReadOnlySequence<byte> ReadResult { get; set; }
         private ReadOnlySequence<byte> LastWrite { get; set; }
 
-        private bool HasFlag(ConnectionState flag) => (Flags & flag) != 0;
-        private void SetFlag(ConnectionState flag) => Flags |= flag;
-        private void RemoveFlag(ConnectionState flag) => Flags &= ~flag;
+        private bool HasFlag(ConnectionState flag) => (_flags & flag) != 0;
+        private void SetFlag(ConnectionState flag) => _flags |= flag;
+        private void RemoveFlag(ConnectionState flag) => _flags &= ~flag;
         private static bool HasFlag(ConnectionState flag, ConnectionState test) => (flag & test) != 0;
         private static ConnectionState SetFlag(ConnectionState flag, ConnectionState newFlag) => flag | newFlag;
     }

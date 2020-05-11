@@ -22,7 +22,7 @@ namespace IoUring.Transport.Internals
 
         private void CancelReadFromSocket(Ring ring)
         {
-            var flags = Flags;
+            var flags = _flags;
             if (HasFlag(flags, ConnectionState.ReadCancelled))
             {
                 return;
@@ -37,14 +37,14 @@ namespace IoUring.Transport.Internals
                 Cancel(ring, AsyncOperation.ReadFrom(Socket));
             }
 
-            Flags = SetFlag(flags, ConnectionState.ReadCancelled);
+            _flags = SetFlag(flags, ConnectionState.ReadCancelled);
 
             CompleteInbound(ring, new ConnectionAbortedException());
         }
 
         private void CancelWriteToSocket(Ring ring)
         {
-            var flags = Flags;
+            var flags = _flags;
 
             if (HasFlag(flags, ConnectionState.WriteCancelled))
             {
@@ -60,17 +60,17 @@ namespace IoUring.Transport.Internals
                 Cancel(ring, AsyncOperation.WriteTo(Socket));
             }
 
-            Flags = SetFlag(flags, ConnectionState.WriteCancelled);
+            _flags = SetFlag(flags, ConnectionState.WriteCancelled);
 
             CompleteInbound(ring, null);
         }
 
         private void CleanupSocketEnd(Ring ring)
         {
-            var flags = Flags;
+            var flags = _flags;
             if (!HasFlag(flags, ConnectionState.HalfClosed))
             {
-                Flags = SetFlag(flags, ConnectionState.HalfClosed);
+                _flags = SetFlag(flags, ConnectionState.HalfClosed);
                 return;
             }
 
@@ -79,7 +79,7 @@ namespace IoUring.Transport.Internals
                 return;
             }
 
-            Flags = SetFlag(flags, ConnectionState.Closed);
+            _flags = SetFlag(flags, ConnectionState.Closed);
             Close(ring);
         }
 

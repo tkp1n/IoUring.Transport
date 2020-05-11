@@ -113,20 +113,20 @@ namespace IoUring.Transport.Internals
             SetFlag(ConnectionState.Reading);
         }
 
-        public unsafe void CompleteRead(Ring ring, int result)
+        public void CompleteRead(Ring ring, int result)
         {
             RemoveFlag(ConnectionState.Reading);
-            foreach (var readHandle in ReadHandles)
-            {
-                if (readHandle.Pointer == (void*)IntPtr.Zero) break;
-                readHandle.Dispose();
-            }
-
             if (result <= 0)
             {
-                HandleCompleteReadError(ring, result);
+                if (!HandleCompleteReadError(ring, result))
+                {
+                    DisposeReadHandles();
+                }
+
                 return;
             }
+
+            DisposeReadHandles();
 
             int advanced = _state;
             uint toAdvance = (uint) (result - advanced);
@@ -140,26 +140,27 @@ namespace IoUring.Transport.Internals
             FlushRead(ring);
         }
 
-        private void HandleCompleteReadError(Ring ring, int result)
+        // Returns whether the read handles are still needed
+        private bool HandleCompleteReadError(Ring ring, int result)
         {
             Exception ex;
-            if (result >= 0)
+            if (result == 0)
             {
                 // EOF
                 CompleteInbound(ring, null);
-                return;
+                return false;
             }
 
             var err = -result;
             if (err == EAGAIN || err == EWOULDBLOCK || err == EINTR)
             {
                 Read(ring, _ioVecsInUse);
-                return;
+                return true;
             }
 
             if (HasFlag(ConnectionState.ReadCancelled) && err == ECANCELED)
             {
-                return;
+                return false;
             }
 
             if (-result == ECONNRESET)
@@ -173,6 +174,16 @@ namespace IoUring.Transport.Internals
             }
 
             CompleteInbound(ring, ex);
+            return false;
+        }
+
+        private unsafe void DisposeReadHandles()
+        {
+            foreach (var readHandle in ReadHandles)
+            {
+                if (readHandle.Pointer == (void*) IntPtr.Zero) break;
+                readHandle.Dispose();
+            }
         }
 
         private void FlushRead(Ring ring)

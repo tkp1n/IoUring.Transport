@@ -49,7 +49,7 @@ namespace IoUring.Transport.Internals
 
         private ConnectionState _flags;
         private byte _ioVecsInUse;
-        private short _state;
+        private int _state;
 
         protected IoUringConnection(LinuxSocket socket, EndPoint local, EndPoint remote, MemoryPool<byte> memoryPool, IoUringOptions options, TransportThreadScheduler scheduler)
         {

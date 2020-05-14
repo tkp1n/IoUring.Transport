@@ -60,6 +60,13 @@ namespace IoUring.Transport.Internals
         private static Exception NewAddressNotAvailableException()
             => new AddressNotAvailableException("Address not available.");
 
+        public static void ThrowNewSubmissionQueueFullException()
+            => throw NewSubmissionQueueFullException();
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static Exception NewSubmissionQueueFullException()
+            => new SubmissionQueueFullException();
+
         public enum ExceptionArgument
         {
             ConnectionFactory,

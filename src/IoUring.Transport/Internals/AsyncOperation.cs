@@ -26,7 +26,8 @@ namespace IoUring.Transport
         CloseAcceptSocket   = 1 << 16,
         Unbind              = 1 << 17,
         RecvSocketPoll      = 1 << 18,
-        RecvSocket          = 1 << 19
+        RecvSocket          = 1 << 19,
+        EventFdOperation    = EventFdReadPoll | EventFdRead
     }
 
     [StructLayout(LayoutKind.Explicit)]

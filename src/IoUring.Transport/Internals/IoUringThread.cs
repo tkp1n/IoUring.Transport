@@ -20,7 +20,7 @@ namespace IoUring.Transport.Internals
         {
             _options = options;
             _ring = new Ring(options.RingSize);
-            _unblockHandle = new RingUnblockHandle(_ring);
+            _unblockHandle = new RingUnblockHandle();
 
             int id;
             lock (_threadIds)
@@ -41,7 +41,7 @@ namespace IoUring.Transport.Internals
         }
 
         protected abstract void RunAsyncOperations();
-        protected abstract void Complete();
+        protected abstract void Complete(int socket, OperationType operationType, int result);
 
         public void Run()
         {
@@ -52,23 +52,24 @@ namespace IoUring.Transport.Internals
         private void Loop()
         {
             var state = LoopState.Running;
-            _unblockHandle.NotifyStartOfEventLoop();
+            _unblockHandle.NotifyStartOfEventLoop(_ring);
+            uint skip = 0;
 
             while (!_disposed)
             {
                 RunAsyncOperations();
-                state = Submit(state);
+                state = Submit(state, skip);
                 if (state == LoopState.WillBlock) continue; // Check operation queue again before blocking
-                Complete();
+                skip = Complete();
             }
 
             _threadCompletion.TrySetResult(null);
         }
 
-        private LoopState Submit(LoopState state)
+        private LoopState Submit(LoopState state, uint skip)
         {
             uint minComplete;
-            if (_ring.SubmissionEntriesUsed == 0)
+            if (_ring.SubmissionEntriesUsed - skip == 0)
             {
                 if (state == LoopState.Running)
                 {
@@ -82,9 +83,43 @@ namespace IoUring.Transport.Internals
                 minComplete = 0;
             }
 
-            _ring.SubmitAndWait(minComplete, out _);
+            _ring.SubmitAndWait(minComplete, skip, out _);
             _unblockHandle.NotifyTransitionToUnblocked();
             return LoopState.Running;
+        }
+
+        private uint Complete()
+        {
+            // Reserve a submission to prepare operations on the eventFd later on
+            var eventFdSubmissionAvailable = _ring.TryGetSubmissionQueueEntryUnsafe(out var eventFdSubmission);
+            uint skip = 1;
+
+            while (_ring.TryRead(out var completion))
+            {
+                var result = completion.result;
+                var (socket, operationType) = AsyncOperation.FromUlong(completion.userData);
+                if ((operationType & OperationType.EventFdOperation) == 0)
+                {
+                    // hot path
+                    Complete(socket, operationType, result);
+                }
+                else
+                {
+                    if (!eventFdSubmissionAvailable) ThrowHelper.ThrowNewSubmissionQueueFullException();
+                    if (operationType == OperationType.EventFdReadPoll)
+                    {
+                        _unblockHandle.CompleteEventFdReadPoll(eventFdSubmission, result);
+                    }
+                    else
+                    {
+                        _unblockHandle.CompleteEventFdRead(eventFdSubmission, result);
+                    }
+
+                    skip = 0; // Don't skip eventFd submission, now that we used it
+                }
+            }
+
+            return skip;
         }
 
         public virtual async ValueTask DisposeAsync()

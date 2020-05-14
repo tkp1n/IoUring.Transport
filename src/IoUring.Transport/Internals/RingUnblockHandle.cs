@@ -11,16 +11,13 @@ namespace IoUring.Transport.Internals
         private const int True = 1;
         private const int False = 0;
 
-        private readonly Ring _ring;
         private readonly LinuxSocket _eventfd;
         private readonly byte[] _eventfdBytes = GC.AllocateUninitializedArray<byte>(8, pinned: true);
         private readonly byte[] _eventfdIoVecBytes = GC.AllocateUninitializedArray<byte>(SizeOf.iovec, pinned: true);
         private int _blockingMode;
 
-        public RingUnblockHandle(Ring ring)
+        public RingUnblockHandle()
         {
-            _ring = ring;
-
             int res = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
             if (res == -1) ThrowHelper.ThrowNewErrnoException();
             _eventfd = res;
@@ -41,44 +38,35 @@ namespace IoUring.Transport.Internals
         public void NotifyTransitionToUnblocked()
             => Volatile.Write(ref _blockingMode,  False);
 
-        public void NotifyStartOfEventLoop() => ReadPollEventFd();
-
-        private void ReadPollEventFd()
+        public void NotifyStartOfEventLoop(Ring ring)
         {
             int fd = _eventfd;
-            _ring.PreparePollAdd(fd, (ushort)POLLIN, AsyncOperation.PollEventFd(fd).AsUlong());
+            ring.PreparePollAdd(fd, (ushort) POLLIN, AsyncOperation.PollEventFd(fd).AsUlong());
         }
 
-        private void ReadEventFd()
+        private void ReadPollEventFd(Submission submission)
         {
             int fd = _eventfd;
-            _ring.PrepareReadV(fd, IoVec, 1, userData: AsyncOperation.ReadEventFd(fd).AsUlong());
+            submission.PreparePollAdd(fd, (ushort) POLLIN, AsyncOperation.PollEventFd(fd).AsUlong());
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void HandleEventFdCompletion(OperationType operationType, int result)
-        {
-            if (operationType == OperationType.EventFdReadPoll) CompleteEventFdReadPoll(result);
-            else if (operationType == OperationType.EventFdRead) CompleteEventFdRead(result);
-        }
-
-        private void CompleteEventFdReadPoll(int result)
+        public void CompleteEventFdReadPoll(Submission submission, int result)
         {
             if (result < 0)
             {
-                HandleCompleteEventFdReadPollError(result);
+                HandleCompleteEventFdReadPollError(submission, result);
                 return;
             }
 
-            ReadEventFd();
+            ReadEventFd(submission);
         }
 
-        private void HandleCompleteEventFdReadPollError(int result)
+        private void HandleCompleteEventFdReadPollError(Submission submission, int result)
         {
             var err = -result;
             if (err == EAGAIN || err == EINTR)
             {
-                ReadPollEventFd();
+                ReadPollEventFd(submission);
             }
             else
             {
@@ -86,23 +74,29 @@ namespace IoUring.Transport.Internals
             }
         }
 
-        private void CompleteEventFdRead(int result)
+        private void ReadEventFd(Submission submission)
+        {
+            int fd = _eventfd;
+            submission.PrepareReadV(fd, IoVec, 1, userData: AsyncOperation.ReadEventFd(fd).AsUlong());
+        }
+
+        public void CompleteEventFdRead(Submission submission, int result)
         {
             if (result < 0)
             {
-                HandleCompleteEventFdReadError(result);
+                HandleCompleteEventFdReadError(submission, result);
                 return;
             }
 
-            ReadPollEventFd();
+            ReadEventFd(submission);
         }
 
-        private void HandleCompleteEventFdReadError(int result)
+        private void HandleCompleteEventFdReadError(Submission submission, int result)
         {
             var err = -result;
             if (err == EAGAIN || err == EINTR)
             {
-                ReadEventFd();
+                ReadEventFd(submission);
             }
             else
             {

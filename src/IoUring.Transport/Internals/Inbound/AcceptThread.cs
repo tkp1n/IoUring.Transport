@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Connections;
@@ -84,31 +85,24 @@ namespace IoUring.Transport.Internals.Inbound
             }
         }
 
-        protected override void Complete()
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        protected override void Complete(int socket, OperationType operationType, int result)
         {
             var ring = _ring;
-            while(ring.TryRead(out Completion c))
+            switch (operationType)
             {
-                var (socket, operationType) = AsyncOperation.FromUlong(c.userData);
-                switch (operationType)
-                {
-                    case OperationType.EventFdReadPoll:
-                    case OperationType.EventFdRead:
-                        _unblockHandle.HandleEventFdCompletion(operationType, c.result);
-                        continue;
-                    case OperationType.AcceptPoll:
-                        _acceptSockets[socket].CompleteAcceptPoll(ring, c.result);
-                        continue;
-                    case OperationType.Accept:
-                        CompleteAccept(socket, c.result);
-                        continue;
-                    case OperationType.CancelAccept:
-                        _acceptSockets[socket].Close(ring);
-                        continue;
-                    case OperationType.CloseAcceptSocket:
-                        CompleteCloseAcceptSocket(socket);
-                        break;
-                }
+                case OperationType.AcceptPoll:
+                    _acceptSockets[socket].CompleteAcceptPoll(ring, result);
+                    return;
+                case OperationType.Accept:
+                    CompleteAccept(socket, result);
+                    return;
+                case OperationType.CancelAccept:
+                    _acceptSockets[socket].Close(ring);
+                    return;
+                case OperationType.CloseAcceptSocket:
+                    CompleteCloseAcceptSocket(socket);
+                    break;
             }
         }
 

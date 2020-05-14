@@ -43,7 +43,7 @@ namespace IoUring.Transport.Internals
 
         private unsafe int PrepareWriteIoVecs()
         {
-            var buffer = ReadResult;
+            var buffer = CurrentWrite;
 
             var writeHandles = WriteHandles;
             var writeVecs = WriteVecs;
@@ -61,7 +61,6 @@ namespace IoUring.Transport.Internals
                 if (ctr == writeHandles.Length) break;
             }
 
-            LastWrite = buffer;
             return ctr;
         }
 
@@ -88,18 +87,18 @@ namespace IoUring.Transport.Internals
             DisposeWriteHandles();
 
             SequencePosition end;
-            var lastWrite = LastWrite;
+            var currentWrite = CurrentWrite;
             if (result == 0)
             {
-                end = lastWrite.Start;
+                end = currentWrite.Start;
             }
-            else if (lastWrite.Length == result)
+            else if (currentWrite.Length == result)
             {
-                end = lastWrite.End;
+                end = currentWrite.End;
             }
             else
             {
-                end = lastWrite.GetPosition(result);
+                end = currentWrite.GetPosition(result);
             }
 
             Outbound.AdvanceTo(end);
@@ -179,7 +178,7 @@ namespace IoUring.Transport.Internals
             {
                 var readResult = _readResultAwaiter.GetResult();
                 var buffer = readResult.Buffer;
-                ReadResult = buffer;
+                CurrentWrite = buffer;
                 if ((buffer.IsEmpty && readResult.IsCompleted) || readResult.IsCanceled)
                 {
                     error = AsyncOperationResult.CompleteWithoutErrorSentinel;

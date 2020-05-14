@@ -105,8 +105,7 @@ namespace IoUring.Transport.Internals
         /// </summary>
         private PipeReader Outbound => Application.Input;
 
-        private ReadOnlySequence<byte> ReadResult { get; set; }
-        private ReadOnlySequence<byte> LastWrite { get; set; }
+        private ReadOnlySequence<byte> CurrentWrite { get; set; }
 
         private bool HasFlag(ConnectionState flag) => (_flags & flag) != 0;
         private void SetFlag(ConnectionState flag) => _flags |= flag;

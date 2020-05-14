@@ -78,7 +78,7 @@ namespace IoUring.Transport.Internals
             _onOnFlushedToApp = () => HandleFlushedToApp();
             _onReadFromApp = () => HandleReadFromApp();
 
-            _ioVecBytes = GC.AllocateUninitializedArray<byte>(SizeOf.iovec * (ReadIOVecCount + WriteIOVecCount));
+            _ioVecBytes = GC.AllocateUninitializedArray<byte>(SizeOf.iovec * (ReadIOVecCount + WriteIOVecCount), pinned: true);
             unsafe
             {
                 _iovec = (iovec*) MemoryHelper.UnsafeGetAddressOfPinnedArrayData(_ioVecBytes);

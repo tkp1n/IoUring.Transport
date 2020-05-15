@@ -30,13 +30,13 @@ namespace IoUring.Transport.Internals
             _unblockHandle.UnblockIfRequired();
         }
 
-        public void ScheduleAsyncRead(int socket)
+        public void ScheduleAsyncReadPoll(int socket)
         {
             _asyncOperationQueue.Enqueue(AsyncOperation.ReadPollFor(socket));
             _unblockHandle.UnblockIfRequired();
         }
 
-        public void ScheduleAsyncWrite(int socket)
+        public void ScheduleAsyncWritePoll(int socket)
         {
             _asyncOperationQueue.Enqueue(AsyncOperation.WritePollFor(socket));
             _unblockHandle.UnblockIfRequired();

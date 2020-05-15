@@ -201,7 +201,7 @@ namespace IoUring.Transport.Internals
             }
             else
             {
-                _scheduler.ScheduleAsyncWrite(Socket);
+                _scheduler.ScheduleAsyncWritePoll(Socket);
             }
 
             return result;

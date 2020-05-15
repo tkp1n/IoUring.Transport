@@ -35,7 +35,7 @@ namespace IoUring.Transport.Internals
         {
             var tcs = new TaskCompletionSource<ConnectionContext>(TaskCreationOptions.RunContinuationsAsynchronously);
             var context = OutboundConnection.Create(endpoint, tcs, _memoryPool, _options, _scheduler);
-            _scheduler.ScheduleAsyncConnect(context.Socket, context);
+            _scheduler.ScheduleAsyncAddAndConnect(context.Socket, context);
 
             return new ValueTask<ConnectionContext>(tcs.Task);
         }
@@ -44,7 +44,7 @@ namespace IoUring.Transport.Internals
         {
             var context = AcceptSocket.Bind(endpoint, connectionSource, _memoryPool, _options, _scheduler);
             _acceptSocketsPerEndPoint[endpoint] = context;
-            _scheduler.ScheduleAsyncBind(context.Socket, context);
+            _scheduler.ScheduleAsyncAddAndAccept(context.Socket, context);
 
             return context.EndPoint;
         }
@@ -116,15 +116,24 @@ namespace IoUring.Transport.Internals
                         case OperationType.Write:
                             _connections[socket].Write(ring);
                             break;
+                        case OperationType.AcceptPoll:
+                            _acceptSockets[socket].AcceptPoll(ring);
+                            break;
+                        case OperationType.Accept:
+                            _acceptSockets[socket].Accept(ring);
+                            break;
+                        case OperationType.Connect:
+                            ((OutboundConnection) _connections[socket]).Connect(ring);
+                            break;
                     }
 
                     _asyncOperationStates.Remove(socket, out var state);
                     switch (operationType)
                     {
-                        case OperationType.Bind:
+                        case OperationType.AddAndAccept:
                             AddAndAccept(socket, state);
                             break;
-                        case OperationType.Connect:
+                        case OperationType.AddAndConnect:
                             AddAndConnect(socket, state);
                             break;
                         case OperationType.CompleteInbound:

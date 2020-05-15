@@ -14,19 +14,21 @@ namespace IoUring.Transport
         EventFdReadPoll     = 1 << 4,
         EventFdRead         = 1 << 5,
         Connect             = 1 << 6,
-        Bind                = 1 << 7,
-        AcceptPoll          = 1 << 8,
-        Accept              = 1 << 9,
-        CompleteInbound     = 1 << 10,
-        CompleteOutbound    = 1 << 11,
-        CancelGeneric       = 1 << 12,
-        CancelAccept        = 1 << 13,
-        Abort               = 1 << 14,
-        CloseConnection     = 1 << 15,
-        CloseAcceptSocket   = 1 << 16,
-        Unbind              = 1 << 17,
-        RecvSocketPoll      = 1 << 18,
-        RecvSocket          = 1 << 19,
+        AcceptPoll          = 1 << 7,
+        Accept              = 1 << 8,
+        CompleteInbound     = 1 << 9,
+        CompleteOutbound    = 1 << 10,
+        CancelGeneric       = 1 << 11,
+        CancelAccept        = 1 << 12,
+        Abort               = 1 << 13,
+        CloseConnection     = 1 << 14,
+        CloseAcceptSocket   = 1 << 15,
+        Unbind              = 1 << 16,
+        RecvSocketPoll      = 1 << 17,
+        RecvSocket          = 1 << 18,
+        Add                 = 1 << 19,
+        AddAndAccept        = Add | Accept,
+        AddAndConnect       = Add | Connect,
         EventFdOperation    = EventFdReadPoll | EventFdRead
     }
 
@@ -67,9 +69,10 @@ namespace IoUring.Transport
         public static AsyncOperation WritePollFor(int fd) => new AsyncOperation(fd, OperationType.WritePoll);
         public static AsyncOperation PollEventFd(int eventFd) => new AsyncOperation(eventFd, OperationType.EventFdReadPoll);
         public static AsyncOperation ReadEventFd(int eventFd) => new AsyncOperation(eventFd, OperationType.EventFdRead);
+        public static AsyncOperation AddAndConnect(int fd) => new AsyncOperation(fd, OperationType.AddAndConnect);
         public static AsyncOperation ConnectOn(int fd) => new AsyncOperation(fd, OperationType.Connect);
-        public static AsyncOperation BindTo(int fd) => new AsyncOperation(fd, OperationType.Bind);
         public static AsyncOperation PollAcceptFrom(int fd) => new AsyncOperation(fd, OperationType.AcceptPoll);
+        public static AsyncOperation AddAndAccept(int fd) => new AsyncOperation(fd, OperationType.AddAndAccept);
         public static AsyncOperation AcceptFrom(int fd) => new AsyncOperation(fd, OperationType.Accept);
         public static AsyncOperation CompleteInboundOf(int fd) => new AsyncOperation(fd, OperationType.CompleteInbound);
         public static AsyncOperation CompleteOutboundOf(int fd) => new AsyncOperation(fd, OperationType.CompleteOutbound);

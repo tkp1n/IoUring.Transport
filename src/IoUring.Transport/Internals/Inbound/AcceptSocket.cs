@@ -81,7 +81,10 @@ namespace IoUring.Transport.Internals.Inbound
         public void AcceptPoll(Ring ring)
         {
             int socket = Socket;
-            ring.PreparePollAdd(socket, (ushort) POLLIN, AsyncOperation.PollAcceptFrom(socket).AsUlong());
+            if (!ring.TryPreparePollAdd(socket, (ushort) POLLIN, AsyncOperation.PollAcceptFrom(socket).AsUlong()))
+            {
+                _scheduler.ScheduleAcceptPoll(socket);
+            }
         }
 
         public void CompleteAcceptPoll(Ring ring, int result)
@@ -119,7 +122,10 @@ namespace IoUring.Transport.Internals.Inbound
             }
 
             int socket = Socket;
-            ring.PrepareAccept(socket, Addr, AddrLen, SOCK_NONBLOCK | SOCK_CLOEXEC, AsyncOperation.AcceptFrom(socket).AsUlong());
+            if (!ring.TryPrepareAccept(socket, Addr, AddrLen, SOCK_NONBLOCK | SOCK_CLOEXEC, AsyncOperation.AcceptFrom(socket).AsUlong()))
+            {
+                _scheduler.ScheduleAccept(socket);
+            }
         }
 
         public bool TryCompleteAcceptSocket(Ring ring, int result, out LinuxSocket socket)

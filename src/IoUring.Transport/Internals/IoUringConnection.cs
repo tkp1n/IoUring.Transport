@@ -36,7 +36,7 @@ namespace IoUring.Transport.Internals
         private readonly Action _onOnFlushedToApp;
         private readonly Action _onReadFromApp;
 
-        private readonly TransportThreadScheduler _scheduler;
+        protected readonly TransportThreadScheduler _scheduler;
 
         private readonly byte[] _ioVecBytes;
         private readonly unsafe iovec* _iovec;

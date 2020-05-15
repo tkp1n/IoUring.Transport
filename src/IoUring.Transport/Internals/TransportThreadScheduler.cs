@@ -16,17 +16,32 @@ namespace IoUring.Transport.Internals
             _asyncOperationStates = asyncOperationStates;
         }
 
-        public void ScheduleAsyncBind(int socket, object acceptSocket)
+        public void ScheduleAcceptPoll(int socket)
+        {
+            _asyncOperationQueue.Enqueue(AsyncOperation.PollAcceptFrom(socket));
+        }
+
+        public void ScheduleAsyncAddAndAccept(int socket, object acceptSocket)
         {
             _asyncOperationStates[socket] = acceptSocket;
-            _asyncOperationQueue.Enqueue(AsyncOperation.BindTo(socket));
+            _asyncOperationQueue.Enqueue(AsyncOperation.AddAndAccept(socket));
             _unblockHandle.UnblockIfRequired();
         }
 
-        public void ScheduleAsyncConnect(int socket, object state)
+        public void ScheduleAccept(int socket)
+        {
+            _asyncOperationQueue.Enqueue(AsyncOperation.AcceptFrom(socket));
+        }
+
+        public void ScheduleConnect(int socket)
+        {
+            _asyncOperationQueue.Enqueue(AsyncOperation.ConnectOn(socket));
+        }
+
+        public void ScheduleAsyncAddAndConnect(int socket, object state)
         {
             _asyncOperationStates[socket] = state;
-            _asyncOperationQueue.Enqueue(AsyncOperation.ConnectOn(socket));
+            _asyncOperationQueue.Enqueue(AsyncOperation.AddAndConnect(socket));
             _unblockHandle.UnblockIfRequired();
         }
 

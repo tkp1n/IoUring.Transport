@@ -79,7 +79,10 @@ namespace IoUring.Transport.Internals.Outbound
         public unsafe void Connect(Ring ring)
         {
             int socket = Socket;
-            ring.PrepareConnect(socket, Addr, AddrLen, AsyncOperation.ConnectOn(socket).AsUlong());
+            if (!ring.TryPrepareConnect(socket, Addr, AddrLen, AsyncOperation.ConnectOn(socket).AsUlong()))
+            {
+                _scheduler.ScheduleConnect(socket);
+            }
         }
 
         public void CompleteConnect(Ring ring, int result)

@@ -88,7 +88,7 @@ namespace IoUring.Transport.Internals
                 return;
             }
 
-            ReadEventFd(submission);
+            ReadPollEventFd(submission);
         }
 
         private void HandleCompleteEventFdReadError(Submission submission, int result)

@@ -281,6 +281,8 @@ namespace IoUring.Transport.Internals
             }
 
             await base.DisposeAsync();
+
+            _memoryPool.Dispose();
         }
     }
 }

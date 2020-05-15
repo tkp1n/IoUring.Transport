@@ -34,20 +34,38 @@ namespace IoUring.Transport.Tests
             (8 * _memoryPool.MaxBufferSize) + 1,
         };
 
+        private static readonly int[] ThreadCount =
+        {
+            1,
+            4
+        };
+
+        private static readonly int[] RingSize =
+        {
+            2,
+            128
+        };
+
         public static IEnumerable<object[]> Data()
         {
             foreach (var endpoint in EndPoints)
             foreach (var length in Lengths)
+            foreach (var threadCount in ThreadCount)
+            foreach (var ringSize in RingSize)
             {
-                yield return new object[] { endpoint, length };
+                yield return new object[] { endpoint, length, threadCount, ringSize };
             }
         }
 
         [Theory]
         [MemberData(nameof(Data))]
-        public async Task SmokeTest(EndPoint endPoint, int length)
+        public async Task SmokeTest(EndPoint endPoint, int length, int threadCount, int ringSize)
         {
-            var options = Options.Create(new IoUringOptions());
+            var options = Options.Create(new IoUringOptions
+            {
+                ThreadCount = threadCount,
+                RingSize = ringSize
+            });
             var transport = new IoUringTransport(options);
 
             try

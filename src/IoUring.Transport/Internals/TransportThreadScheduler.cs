@@ -104,10 +104,35 @@ namespace IoUring.Transport.Internals
             _unblockHandle.UnblockIfRequired();
         }
 
+        public void SchedulePollReceive(int socket)
+        {
+            _asyncOperationQueue.Enqueue(AsyncOperation.RecvSocketPoll(socket));
+        }
+
         public void ScheduleAsyncPollReceive(int socket)
         {
             _asyncOperationQueue.Enqueue(AsyncOperation.RecvSocketPoll(socket));
             _unblockHandle.UnblockIfRequired();
+        }
+
+        public void ScheduleRecvSocket(int socket)
+        {
+            _asyncOperationQueue.Enqueue(AsyncOperation.RecvSocket(socket));
+        }
+
+        public void ScheduleCancel(AsyncOperation cancelOperation)
+        {
+            _asyncOperationQueue.Enqueue(cancelOperation);
+        }
+
+        public void ScheduleCloseConnection(int socket)
+        {
+            _asyncOperationQueue.Enqueue(AsyncOperation.CloseConnection(socket));
+        }
+
+        public void ScheduleCloseAcceptSocket(int socket)
+        {
+            _asyncOperationQueue.Enqueue(AsyncOperation.CloseAcceptSocket(socket));
         }
     }
 }

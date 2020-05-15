@@ -13,23 +13,27 @@ namespace IoUring.Transport
         WritePoll           = 1 << 3,
         EventFdReadPoll     = 1 << 4,
         EventFdRead         = 1 << 5,
+        EventFdOperation    = EventFdReadPoll | EventFdRead,
         Connect             = 1 << 6,
         AcceptPoll          = 1 << 7,
         Accept              = 1 << 8,
         CompleteInbound     = 1 << 9,
         CompleteOutbound    = 1 << 10,
         CancelGeneric       = 1 << 11,
-        CancelAccept        = 1 << 12,
-        Abort               = 1 << 13,
-        CloseConnection     = 1 << 14,
-        CloseAcceptSocket   = 1 << 15,
-        Unbind              = 1 << 16,
-        RecvSocketPoll      = 1 << 17,
-        RecvSocket          = 1 << 18,
-        Add                 = 1 << 19,
+        CancelAccept        = CancelGeneric | Accept,
+        CancelRead          = CancelGeneric | Read,
+        CancelReadPoll      = CancelGeneric | ReadPoll,
+        CancelWrite         = CancelGeneric | Write,
+        CancelWritePoll     = CancelGeneric | WritePoll,
+        Abort               = 1 << 12,
+        CloseConnection     = 1 << 13,
+        CloseAcceptSocket   = 1 << 14,
+        Unbind              = 1 << 15,
+        RecvSocketPoll      = 1 << 16,
+        RecvSocket          = 1 << 17,
+        Add                 = 1 << 18,
         AddAndAccept        = Add | Accept,
         AddAndConnect       = Add | Connect,
-        EventFdOperation    = EventFdReadPoll | EventFdRead
     }
 
     [StructLayout(LayoutKind.Explicit)]
@@ -41,7 +45,7 @@ namespace IoUring.Transport
         private readonly OperationType _operation;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private AsyncOperation(int socket, OperationType operation)
+        public AsyncOperation(int socket, OperationType operation)
         {
             _socket = socket;
             _operation = operation;
@@ -76,7 +80,7 @@ namespace IoUring.Transport
         public static AsyncOperation AcceptFrom(int fd) => new AsyncOperation(fd, OperationType.Accept);
         public static AsyncOperation CompleteInboundOf(int fd) => new AsyncOperation(fd, OperationType.CompleteInbound);
         public static AsyncOperation CompleteOutboundOf(int fd) => new AsyncOperation(fd, OperationType.CompleteOutbound);
-        public static AsyncOperation CancelGeneric(int fd) => new AsyncOperation(fd, OperationType.CancelGeneric);
+        public static AsyncOperation CancelOperation(OperationType op, int fd) => new AsyncOperation(fd, OperationType.CancelGeneric | op);
         public static AsyncOperation CancelAccept(int fd) => new AsyncOperation(fd, OperationType.CancelAccept);
         public static AsyncOperation Abort(int fd) => new AsyncOperation(fd, OperationType.Abort);
         public static AsyncOperation UnbindFrom(int fd) => new AsyncOperation(fd, OperationType.Unbind);

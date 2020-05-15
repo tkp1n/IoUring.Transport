@@ -70,7 +70,8 @@ namespace IoUring.Transport.Internals.Inbound
         protected override void RunAsyncOperations()
         {
             var ring = _ring;
-            while (_asyncOperationQueue.TryDequeue(out var operation))
+            var sqesAvailable = ring.SubmissionEntriesAvailable;
+            while (sqesAvailable-- > 0 && _asyncOperationQueue.TryDequeue(out var operation))
             {
                 var (socket, operationType) = operation;
                 switch (operationType)
@@ -80,6 +81,18 @@ namespace IoUring.Transport.Internals.Inbound
                         break;
                     case OperationType.Unbind:
                         _acceptSockets[socket].Unbid(ring);
+                        break;
+
+                    // below cases are only visited on ring overflow
+
+                    case OperationType.Accept:
+                        _acceptSockets[socket].Accept(ring);
+                        break;
+                    case OperationType.CancelAccept:
+                        _acceptSockets[socket].Unbid(ring);
+                        break;
+                    case OperationType.CloseAcceptSocket:
+                        _acceptSockets[socket].Close(ring);
                         break;
                 }
             }

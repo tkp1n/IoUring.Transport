@@ -184,19 +184,32 @@ namespace IoUring.Transport.Internals.Inbound
         {
             IsUnbinding = true;
             int socket = Socket;
-            ring.PrepareCancel(AsyncOperation.AcceptFrom(Socket).AsUlong(), AsyncOperation.CancelAccept(socket).AsUlong());
+            if (!ring.TryPrepareCancel(AsyncOperation.AcceptFrom(socket).AsUlong(), AsyncOperation.CancelAccept(socket).AsUlong()))
+            {
+                _scheduler.ScheduleCancel(AsyncOperation.CancelAccept(socket));
+            }
         }
 
         public void Close(Ring ring)
         {
+            int socket = Socket;
             if (ring.Supports(RingOperation.Close))
             {
-                ring.PrepareClose(Socket, AsyncOperation.CloseAcceptSocket(Socket).AsUlong());
+                if (!ring.TryPrepareClose(socket, AsyncOperation.CloseAcceptSocket(socket).AsUlong()))
+                {
+                    _scheduler.ScheduleCloseAcceptSocket(socket);
+                }
             }
             else
             {
-                Socket.Close(); // pre v5.6
-                ring.PrepareNop(AsyncOperation.CloseAcceptSocket(Socket).AsUlong());
+                if (ring.TryPrepareNop(AsyncOperation.CloseAcceptSocket(socket).AsUlong()))
+                {
+                    Socket.Close(); // pre v5.6
+                }
+                else
+                {
+                    _scheduler.ScheduleCloseAcceptSocket(socket);
+                }
             }
         }
 

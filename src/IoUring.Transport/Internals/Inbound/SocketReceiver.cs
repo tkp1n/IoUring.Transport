@@ -37,7 +37,10 @@ namespace IoUring.Transport.Internals.Inbound
         public void PollReceive(Ring ring)
         {
             int socket = _recipient;
-            ring.PreparePollAdd(socket, (ushort) POLLIN, AsyncOperation.RecvSocketPoll(socket).AsUlong());
+            if (!ring.TryPreparePollAdd(socket, (ushort) POLLIN, AsyncOperation.RecvSocketPoll(socket).AsUlong()))
+            {
+                _scheduler.SchedulePollReceive(socket);
+            }
         }
 
         public void CompleteReceivePoll(Ring ring, int result)
@@ -88,7 +91,10 @@ namespace IoUring.Transport.Internals.Inbound
             int socket = _recipient;
             ring.PrepareRecvMsg(socket, header, (uint)(MSG_NOSIGNAL | MSG_CMSG_CLOEXEC), AsyncOperation.RecvSocket(socket).AsUlong());
             */
-            ring.PrepareNop(AsyncOperation.RecvSocket(_recipient).AsUlong());
+            if (!ring.TryPrepareNop(AsyncOperation.RecvSocket(_recipient).AsUlong()))
+            {
+                _scheduler.ScheduleRecvSocket(_recipient);
+            }
             // End work-around for https://github.com/axboe/liburing/issues/128
         }
 

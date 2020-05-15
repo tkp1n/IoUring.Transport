@@ -30,11 +30,11 @@ namespace IoUring.Transport.Internals
 
             if (HasFlag(flags, ConnectionState.PollingRead))
             {
-                Cancel(ring, AsyncOperation.ReadPollFor(Socket));
+                Cancel(ring, OperationType.ReadPoll);
             }
             else if (HasFlag(flags, ConnectionState.Reading))
             {
-                Cancel(ring, AsyncOperation.ReadFrom(Socket));
+                Cancel(ring, OperationType.Read);
             }
 
             _flags = SetFlag(flags, ConnectionState.ReadCancelled);
@@ -53,11 +53,11 @@ namespace IoUring.Transport.Internals
 
             if (HasFlag(flags, ConnectionState.PollingWrite))
             {
-                Cancel(ring, AsyncOperation.WritePollFor(Socket));
+                Cancel(ring,  OperationType.WritePoll);
             }
             else if (HasFlag(flags, ConnectionState.Writing))
             {
-                Cancel(ring, AsyncOperation.WriteTo(Socket));
+                Cancel(ring, OperationType.Write);
             }
 
             _flags = SetFlag(flags, ConnectionState.WriteCancelled);
@@ -83,21 +83,35 @@ namespace IoUring.Transport.Internals
             Close(ring);
         }
 
-        private void Cancel(Ring ring, AsyncOperation operation)
+        public void Cancel(Ring ring, OperationType op)
         {
-            ring.PrepareCancel(operation.AsUlong(), AsyncOperation.CancelGeneric(operation.Socket).AsUlong());
+            int socket = Socket;
+            if (!ring.TryPrepareCancel(new AsyncOperation(socket, op).AsUlong(), AsyncOperation.CancelOperation(op, socket).AsUlong()))
+            {
+                _scheduler.ScheduleCancel(AsyncOperation.CancelOperation(op, socket));
+            }
         }
 
-        private void Close(Ring ring)
+        public void Close(Ring ring)
         {
+            int socket = Socket;
             if (ring.Supports(RingOperation.Close))
             {
-                ring.PrepareClose(Socket, AsyncOperation.CloseConnection(Socket).AsUlong());
+                if (!ring.TryPrepareClose(socket, AsyncOperation.CloseConnection(socket).AsUlong()))
+                {
+                    _scheduler.ScheduleCloseConnection(socket);
+                }
             }
             else
             {
-                Socket.Close(); // pre v5.6
-                ring.PrepareNop(AsyncOperation.CloseConnection(Socket).AsUlong());
+                if (ring.TryPrepareNop(AsyncOperation.CloseConnection(socket).AsUlong()))
+                {
+                    Socket.Close(); // pre v5.6
+                }
+                else
+                {
+                    _scheduler.ScheduleCloseConnection(socket);
+                }
             }
         }
 

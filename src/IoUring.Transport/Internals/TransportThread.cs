@@ -122,8 +122,26 @@ namespace IoUring.Transport.Internals
                         case OperationType.Accept:
                             _acceptSockets[socket].Accept(ring);
                             break;
+                        case OperationType.RecvSocket:
+                            _socketReceivers[socket].Receive(ring);
+                            break;
                         case OperationType.Connect:
                             ((OutboundConnection) _connections[socket]).Connect(ring);
+                            break;
+                        case OperationType.CancelRead:
+                        case OperationType.CancelReadPoll:
+                        case OperationType.CancelWrite:
+                        case OperationType.CancelWritePoll:
+                            _connections[socket].Cancel(ring, operationType & ~OperationType.CancelGeneric);
+                            break;
+                        case OperationType.CancelAccept:
+                            _acceptSockets[socket].Unbid(ring);
+                            break;
+                        case OperationType.CloseConnection:
+                            _connections[socket].Close(ring);
+                            break;
+                        case OperationType.CloseAcceptSocket:
+                            _acceptSockets[socket].Close(ring);
                             break;
                     }
 

@@ -74,7 +74,8 @@ namespace IoUring.Transport.Internals
         protected override void RunAsyncOperations()
         {
             var ring = _ring;
-            while (_asyncOperationQueue.TryDequeue(out var operation))
+            var sqesAvailable = ring.SubmissionEntriesAvailable;
+            while (sqesAvailable-- > 0 && _asyncOperationQueue.TryDequeue(out var operation))
             {
                 var (socket, operationType) = operation;
                 if ((operationType & (OperationType.ReadPoll | OperationType.WritePoll)) != 0)
@@ -100,6 +101,21 @@ namespace IoUring.Transport.Internals
                         case OperationType.RecvSocketPoll:
                             _socketReceivers[socket].PollReceive(ring);
                             continue;
+
+                        // below cases are only visited on ring overflow
+
+                        case OperationType.ReadPoll:
+                            _connections[socket].ReadPoll(ring);
+                            break;
+                        case OperationType.Read:
+                            _connections[socket].Read(ring);
+                            break;
+                        case OperationType.WritePoll:
+                            _connections[socket].WritePoll(ring);
+                            break;
+                        case OperationType.Write:
+                            _connections[socket].Write(ring);
+                            break;
                     }
 
                     _asyncOperationStates.Remove(socket, out var state);

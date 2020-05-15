@@ -10,7 +10,12 @@ namespace IoUring.Transport.Internals
         public void WritePoll(Ring ring)
         {
             int socket = Socket;
-            ring.PreparePollAdd(socket, (ushort) POLLOUT, AsyncOperation.WritePollFor(socket).AsUlong());
+            if (!ring.TryPreparePollAdd(socket, (ushort) POLLOUT, AsyncOperation.WritePollFor(socket).AsUlong()))
+            {
+                _scheduler.ScheduleWritePoll(socket);
+                return;
+            }
+
             SetFlag(ConnectionState.PollingWrite);
         }
 
@@ -64,10 +69,20 @@ namespace IoUring.Transport.Internals
             return ctr;
         }
 
+        public void Write(Ring ring)
+        {
+            Write(ring, _writeIoVecsInUse);
+        }
+
         private unsafe void Write(Ring ring, int ioVecs)
         {
             int socket = Socket;
-            ring.PrepareWriteV(socket, WriteVecs, ioVecs, 0 ,0, AsyncOperation.WriteTo(socket).AsUlong());
+            if (!ring.TryPrepareWriteV(socket, WriteVecs, ioVecs, 0, 0, AsyncOperation.WriteTo(socket).AsUlong()))
+            {
+                _scheduler.ScheduleWrite(socket);
+                return;
+            }
+
             SetFlag(ConnectionState.Writing);
         }
 
@@ -110,7 +125,7 @@ namespace IoUring.Transport.Internals
             var err = -result;
             if (err == EAGAIN || err == EWOULDBLOCK || err == EINTR)
             {
-                Write(ring, _writeIoVecsInUse);
+                Write(ring);
                 return true;
             }
 

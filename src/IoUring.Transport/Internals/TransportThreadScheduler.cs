@@ -30,16 +30,36 @@ namespace IoUring.Transport.Internals
             _unblockHandle.UnblockIfRequired();
         }
 
+        public void ScheduleReadPoll(int socket)
+        {
+            _asyncOperationQueue.Enqueue(AsyncOperation.ReadPollFor(socket));
+        }
+
         public void ScheduleAsyncReadPoll(int socket)
         {
             _asyncOperationQueue.Enqueue(AsyncOperation.ReadPollFor(socket));
             _unblockHandle.UnblockIfRequired();
         }
 
+        public void ScheduleWritePoll(int socket)
+        {
+            _asyncOperationQueue.Enqueue(AsyncOperation.WritePollFor(socket));
+        }
+
         public void ScheduleAsyncWritePoll(int socket)
         {
             _asyncOperationQueue.Enqueue(AsyncOperation.WritePollFor(socket));
             _unblockHandle.UnblockIfRequired();
+        }
+
+        public void ScheduleRead(int socket)
+        {
+            _asyncOperationQueue.Enqueue(AsyncOperation.ReadFrom(socket));
+        }
+
+        public void ScheduleWrite(int socket)
+        {
+            _asyncOperationQueue.Enqueue(AsyncOperation.WriteTo(socket));
         }
 
         public void ScheduleAsyncInboundCompletion(int socket, Exception error)

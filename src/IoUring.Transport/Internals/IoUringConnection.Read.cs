@@ -10,7 +10,12 @@ namespace IoUring.Transport.Internals
         public void ReadPoll(Ring ring)
         {
             int socket = Socket;
-            ring.PreparePollAdd(socket, (ushort) POLLIN, AsyncOperation.ReadPollFor(socket).AsUlong());
+            if (!ring.TryPreparePollAdd(socket, (ushort) POLLIN, AsyncOperation.ReadPollFor(socket).AsUlong()))
+            {
+                _scheduler.ScheduleReadPoll(socket);
+                return;
+            }
+
             SetFlag(ConnectionState.PollingRead);
         }
 
@@ -106,10 +111,20 @@ namespace IoUring.Transport.Internals
             return i + 1;
         }
 
+        public void Read(Ring ring)
+        {
+            Read(ring, _readIoVecsInUse);
+        }
+
         private unsafe void Read(Ring ring, int ioVecs)
         {
             int socket = Socket;
-            ring.PrepareReadV(socket, ReadVecs, ioVecs, 0, 0, AsyncOperation.ReadFrom(socket).AsUlong());
+            if (!ring.TryPrepareReadV(socket, ReadVecs, ioVecs, 0, 0, AsyncOperation.ReadFrom(socket).AsUlong()))
+            {
+                _scheduler.ScheduleRead(socket);
+                return;
+            }
+
             SetFlag(ConnectionState.Reading);
         }
 
@@ -153,7 +168,7 @@ namespace IoUring.Transport.Internals
             var err = -result;
             if (err == EAGAIN || err == EWOULDBLOCK || err == EINTR)
             {
-                Read(ring, _readIoVecsInUse);
+                Read(ring);
                 return true;
             }
 

@@ -7,20 +7,23 @@ namespace IoUring.Transport.Internals
 {
     internal abstract class IoUringThread : IAsyncDisposable
     {
+        public const int NoCpuAffinity = -1;
         private static readonly Dictionary<string, int> _threadIds = new Dictionary<string, int>();
 
         protected readonly IoUringOptions _options;
         protected readonly Ring _ring;
         protected readonly RingUnblockHandle _unblockHandle;
+        private readonly int _cpuId;
         private readonly Thread _thread;
         private readonly TaskCompletionSource<object> _threadCompletion = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
         private volatile bool _disposed;
 
-        protected IoUringThread(string name, IoUringOptions options)
+        protected IoUringThread(string name, IoUringOptions options, int cpuId)
         {
             _options = options;
             _ring = new Ring(options.RingSize);
             _unblockHandle = new RingUnblockHandle();
+            _cpuId = cpuId;
 
             int id;
             lock (_threadIds)
@@ -51,6 +54,8 @@ namespace IoUring.Transport.Internals
 
         private void Loop()
         {
+            SetAffinity();
+
             var state = LoopState.Running;
             _unblockHandle.NotifyStartOfEventLoop(_ring);
             uint skip = 0;
@@ -120,6 +125,13 @@ namespace IoUring.Transport.Internals
             }
 
             return skip;
+        }
+
+        private void SetAffinity()
+        {
+            if (_cpuId == NoCpuAffinity) return;
+
+            Scheduler.SetCurrentThreadAffinity(_cpuId);
         }
 
         public virtual async ValueTask DisposeAsync()

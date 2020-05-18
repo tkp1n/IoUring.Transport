@@ -1,22 +1,18 @@
 using System;
 using System.Buffers;
 using System.Net;
-using System.Net.Sockets;
 using System.Threading.Tasks;
 using Xunit;
 using IoUring.Transport.Internals;
 using Microsoft.Extensions.Options;
 using IoUring.Transport.Internals.Outbound;
 using System.IO.Pipelines;
-using System.Collections.Generic;
-using System.IO;
 using Xunit.Abstractions;
 
 namespace IoUring.Transport.Tests
 {
-    public class ConnectionFactoryTests
+    public class ConnectionFactoryTests : IoUringConnectionTest
     {
-        private static readonly MemoryPool<byte> _memoryPool = new SlabMemoryPool();
         public ConnectionFactoryTests(ITestOutputHelper outputHelper)
         {
             OutputHelper = outputHelper;
@@ -24,62 +20,15 @@ namespace IoUring.Transport.Tests
 
         private ITestOutputHelper OutputHelper { get; }
 
-        private static readonly Func<EndPoint>[] EndPoints =
-        {
-            () => new IPEndPoint(IPAddress.Parse("127.0.0.1"), 0),
-            () => new IPEndPoint(IPAddress.Parse("::1"), 0),
-            () => new UnixDomainSocketEndPoint($"{Path.GetTempPath()}/{Path.GetRandomFileName()}")
-        };
-
-        private static readonly int[] Lengths =
-        {
-            1,
-            _memoryPool.MaxBufferSize - 1,
-            _memoryPool.MaxBufferSize,
-            _memoryPool.MaxBufferSize + 1,
-            (8 * _memoryPool.MaxBufferSize) - 1,
-            (8 * _memoryPool.MaxBufferSize),
-            (8 * _memoryPool.MaxBufferSize) + 1,
-        };
-
-        private static readonly PipeScheduler[] SchedulerModes =
-        {
-            PipeScheduler.Inline,
-            PipeScheduler.ThreadPool
-        };
-
-        private static readonly int[] ThreadCount =
-        {
-            1,
-            4
-        };
-
-        private static readonly int[] RingSize =
-        {
-            2,
-            128
-        };
-
-        public static IEnumerable<object[]> Data()
-        {
-            foreach (var endpoint in EndPoints)
-            foreach (var length in Lengths)
-            foreach (var schedulerMode in SchedulerModes)
-            foreach (var threadCount in ThreadCount)
-            foreach (var ringSize in RingSize)
-            {
-                yield return new object[] { endpoint, length, schedulerMode, threadCount, ringSize };
-            }
-        }
-
         [Theory]
         [MemberData(nameof(Data))]
-        public async void SmokeTest(Func<EndPoint> endpoint, int length, PipeScheduler schedulerMode, int threadCount, int ringSize)
+        public async void SmokeTest(Func<EndPoint> endpoint, int length, PipeScheduler schedulerMode, int threadCount, int ringSize, bool threadAffinity)
         {
             using var server = new EchoServer(endpoint(), OutputHelper);
             var transport = new IoUringTransport(Options.Create(new IoUringOptions
             {
                 ThreadCount = threadCount,
+                SetThreadAffinity = threadAffinity,
                 ApplicationSchedulingMode = schedulerMode,
                 RingSize = ringSize
             }));

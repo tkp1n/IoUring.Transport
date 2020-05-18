@@ -18,7 +18,7 @@ namespace IoUring.Transport.Internals.Inbound
         private int _schedulerIndex;
 
         public AcceptThread(IoUringOptions options, TransportThread[] transportThreads)
-         : base("IoUring Accept Thread", options)
+         : base("IoUring Accept Thread", options, NoCpuAffinity)
         {
             _scheduler = new AcceptThreadScheduler(_unblockHandle, _asyncOperationQueue);
             _transportThreads = transportThreads;

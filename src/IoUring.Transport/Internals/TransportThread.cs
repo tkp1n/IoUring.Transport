@@ -24,8 +24,8 @@ namespace IoUring.Transport.Internals
         private readonly TransportThreadScheduler _scheduler;
         private readonly MemoryPool<byte> _memoryPool;
 
-        public TransportThread(IoUringOptions options)
-            : base("IoUring Transport Thread", options)
+        public TransportThread(IoUringOptions options, int cpuId)
+            : base("IoUring Transport Thread", options, cpuId)
         {
             _memoryPool = new SlabMemoryPool();
             _scheduler = new TransportThreadScheduler(_unblockHandle, _asyncOperationQueue, _asyncOperationStates);

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using IoUring.Transport.Internals.Inbound;
@@ -21,10 +22,18 @@ namespace IoUring.Transport.Internals
 
             Limits.SetToMax(Resource.RLIMIT_NOFILE);
 
+            List<int> cpus = null;
+            if (_options.SetThreadAffinity)
+            {
+                cpus = CpuInfo.GetPreferredCpuIds(_options.ThreadCount);
+            }
+
             var threads = new TransportThread[_options.ThreadCount];
+            int cpuIdx = 0;
             for (int i = 0; i < threads.Length; i++)
             {
-                var thread = new TransportThread(_options);
+                var cpuId = cpus == null ? TransportThread.NoCpuAffinity : cpus[cpuIdx++ % cpus.Count];
+                var thread = new TransportThread(_options, cpuId);
                 thread.Run();
                 threads[i] = thread;
             }

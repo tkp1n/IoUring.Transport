@@ -43,10 +43,15 @@ namespace IoUring.Transport.Internals
         public EndPoint Bind(IPEndPoint endpoint, ChannelWriter<ConnectionContext> connectionSource)
         {
             var context = AcceptSocket.Bind(endpoint, connectionSource, _memoryPool, _options, _scheduler);
-            _acceptSocketsPerEndPoint[endpoint] = context;
+            _acceptSocketsPerEndPoint[(IPEndPoint) context.EndPoint] = context;
             _scheduler.ScheduleAsyncAddAndAccept(context.Socket, context);
 
             return context.EndPoint;
+        }
+
+        public void SetReceiveOnIncomingCpu(IPEndPoint endPoint)
+        {
+            _acceptSocketsPerEndPoint[endPoint].Socket.ReceiveOnIncomingCpu();
         }
 
         public ValueTask Unbind(IPEndPoint endPoint)

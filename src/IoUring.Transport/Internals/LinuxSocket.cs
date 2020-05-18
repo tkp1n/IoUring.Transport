@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using Tmds.Linux;
+using static IoUring.Transport.Internals.Bpf;
 using static Tmds.Linux.LibC;
 
 namespace IoUring.Transport.Internals
@@ -34,7 +35,25 @@ namespace IoUring.Transport.Internals
             if (rv != 0) ThrowHelper.ThrowNewErrnoException();
         }
 
-        public unsafe void SetFlag(int flag)
+        public unsafe void ReceiveOnIncomingCpu()
+        {
+            var code = stackalloc sock_filter[2];
+            // A = raw_smp_processor_id()
+            code[0] = new sock_filter { code = BPF_LD | BPF_W | BPF_ABS, k = SKF_AD_OFF + SKF_AD_CPU };
+            // return A
+            code[1] = new sock_filter { code = BPF_RET | BPF_A };
+
+            var p = new sock_fprog
+            {
+                len = 2,
+                filter = code
+            };
+
+            var rv = setsockopt(_fd, SOL_SOCKET, SO_ATTACH_REUSEPORT_CBPF, &p, sizeof(sock_fprog));
+            if (rv != 0) ThrowHelper.ThrowNewErrnoException();
+        }
+
+        public void SetFlag(int flag)
         {
             int flags = fcntl(_fd, F_GETFL, 0);
             if ((flags & flag) != 0) return;

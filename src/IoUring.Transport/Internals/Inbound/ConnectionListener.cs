@@ -12,12 +12,14 @@ namespace IoUring.Transport.Internals.Inbound
     internal sealed class ConnectionListener : IConnectionListener
     {
         private readonly IoUringTransport _transport;
+        private readonly IoUringOptions _options;
         private readonly Channel<ConnectionContext> _acceptQueue;
         private ConnectionListenerState _state = ConnectionListenerState.New;
 
         private ConnectionListener(EndPoint endpoint, IoUringTransport transport, IoUringOptions options)
         {
             _transport = transport;
+            _options = options;
             _acceptQueue = Channel.CreateUnbounded<ConnectionContext>(new UnboundedChannelOptions
             {
                 SingleReader = true, // reads happen sequentially
@@ -63,6 +65,10 @@ namespace IoUring.Transport.Internals.Inbound
                         }
 
                         EndPoint = boundEndPoint;
+                        if (_options.ReceiveOnIncomingCpu)
+                        {
+                            threads[0].SetReceiveOnIncomingCpu((IPEndPoint) boundEndPoint);
+                        }
 
                         break;
                     case UnixDomainSocketEndPoint unixDomainSocketEndPoint:

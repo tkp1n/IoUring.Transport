@@ -3,9 +3,9 @@ using static Tmds.Linux.LibC;
 
 namespace IoUring.Transport.Internals
 {
-    internal class Scheduler
+    internal static class Scheduler
     {
-        public unsafe static void SetCurrentThreadAffinity(int cpuId)
+        public static unsafe void SetCurrentThreadAffinity(int cpuId)
         {
             cpu_set_t cpu_set;
             CPU_ZERO(&cpu_set);

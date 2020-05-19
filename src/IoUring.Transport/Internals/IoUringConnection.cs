@@ -33,6 +33,8 @@ namespace IoUring.Transport.Internals
         // Copied from LibuvTransportOptions.MaxWriteBufferSize
         private const int PauseOutputWriterThreshold = 64 * 1024;
 
+        private readonly SlabMemoryPool _memoryPool;
+
         private readonly Action _onOnFlushedToApp;
         private readonly Action _onReadFromApp;
 
@@ -52,14 +54,14 @@ namespace IoUring.Transport.Internals
         private byte _writeIoVecsInUse;
         private int _state;
 
-        protected IoUringConnection(LinuxSocket socket, EndPoint local, EndPoint remote, MemoryPool<byte> memoryPool, IoUringOptions options, TransportThreadScheduler scheduler)
+        protected IoUringConnection(LinuxSocket socket, EndPoint local, EndPoint remote, SlabMemoryPool memoryPool, IoUringOptions options, TransportThreadScheduler scheduler)
         {
             Socket = socket;
 
             LocalEndPoint = local;
             RemoteEndPoint = remote;
 
-            MemoryPool = memoryPool;
+            _memoryPool = memoryPool;
             _scheduler = scheduler;
 
             _connectionClosedTokenSource = new CancellationTokenSource();
@@ -67,8 +69,8 @@ namespace IoUring.Transport.Internals
             _waitForConnectionClosedTcs = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
 
             var appScheduler = options.ApplicationSchedulingMode;
-            var inputOptions = new PipeOptions(MemoryPool, appScheduler, PipeScheduler.Inline, PauseInputWriterThreshold, PauseInputWriterThreshold / 2, useSynchronizationContext: false);
-            var outputOptions = new PipeOptions(MemoryPool, PipeScheduler.Inline, appScheduler, PauseOutputWriterThreshold, PauseOutputWriterThreshold / 2, useSynchronizationContext: false);
+            var inputOptions = new PipeOptions(memoryPool, appScheduler, PipeScheduler.Inline, PauseInputWriterThreshold, PauseInputWriterThreshold / 2, useSynchronizationContext: false);
+            var outputOptions = new PipeOptions(memoryPool, PipeScheduler.Inline, appScheduler, PauseOutputWriterThreshold, PauseOutputWriterThreshold / 2, useSynchronizationContext: false);
 
             var pair = DuplexPipe.CreateConnectionPair(inputOptions, outputOptions);
 
@@ -87,7 +89,7 @@ namespace IoUring.Transport.Internals
 
         public LinuxSocket Socket { get; }
 
-        public override MemoryPool<byte> MemoryPool { get; }
+        public override MemoryPool<byte> MemoryPool => _memoryPool;
 
         private unsafe iovec* ReadVecs => _iovec;
         private unsafe iovec* WriteVecs => _iovec + ReadIOVecCount;

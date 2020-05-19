@@ -29,7 +29,7 @@ namespace System.Buffers
         /// Max allocation block size for pooled blocks,
         /// larger values can be leased but they will be disposed after use rather than returned to the pool.
         /// </summary>
-        public override int MaxBufferSize { get; } = _blockSize;
+        public override int MaxBufferSize => _blockSize;
 
         /// <summary>
         /// The size of a block. 4096 is chosen because most operating systems use 4k pages.

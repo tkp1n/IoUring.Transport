@@ -46,6 +46,7 @@ namespace IoUring.Transport.Internals
             }
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private unsafe int PrepareWriteIoVecs()
         {
             var buffer = CurrentWrite;

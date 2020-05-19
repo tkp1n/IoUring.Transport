@@ -47,9 +47,10 @@ namespace IoUring.Transport.Internals
             }
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private int DetermineReadAllocation()
         {
-            var maxBufferSize = MemoryPool.MaxBufferSize;
+            var maxBufferSize = _memoryPool.MaxBufferSize;
 
             int lastRead = _state; // state is amount of bytes read previously
             int reserve;
@@ -72,9 +73,10 @@ namespace IoUring.Transport.Internals
             return reserve;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private unsafe int PrepareReadIoVecs(int memoryRequirement)
         {
-            int maxBufferSize = MemoryPool.MaxBufferSize;
+            int maxBufferSize = _memoryPool.MaxBufferSize;
             memoryRequirement = Math.Min(memoryRequirement, maxBufferSize * ReadIOVecCount);
             int i = 0;
             int advanced = 0;
@@ -145,7 +147,7 @@ namespace IoUring.Transport.Internals
 
             int advanced = _state;
             uint toAdvance = (uint) (result - advanced);
-            if (toAdvance > MemoryPool.MaxBufferSize)
+            if (toAdvance > _memoryPool.MaxBufferSize)
             {
                 ThrowHelper.ThrowNewInvalidOperationException();
             }

@@ -15,13 +15,13 @@ namespace IoUring.Transport.Internals.Inbound
     internal sealed unsafe class AcceptSocket
     {
         private readonly TaskCompletionSource<object> _unbindCompletion;
-        private readonly MemoryPool<byte> _memoryPool;
+        private readonly SlabMemoryPool _memoryPool;
         private readonly IoUringOptions _options;
         private readonly TransportThreadScheduler _scheduler;
         private readonly byte[] _addr;
         private readonly byte[] _addrLen;
 
-        private AcceptSocket(LinuxSocket socket, EndPoint endPoint, ChannelWriter<ConnectionContext> acceptQueue, MemoryPool<byte> memoryPool, IoUringOptions options, TransportThreadScheduler scheduler)
+        private AcceptSocket(LinuxSocket socket, EndPoint endPoint, ChannelWriter<ConnectionContext> acceptQueue, SlabMemoryPool memoryPool, IoUringOptions options, TransportThreadScheduler scheduler)
         {
             Socket = socket;
             EndPoint = endPoint;
@@ -38,7 +38,7 @@ namespace IoUring.Transport.Internals.Inbound
             }
         }
 
-        public static AcceptSocket Bind(IPEndPoint ipEndPoint, ChannelWriter<ConnectionContext> acceptQueue, MemoryPool<byte> memoryPool, IoUringOptions options, TransportThreadScheduler scheduler)
+        public static AcceptSocket Bind(IPEndPoint ipEndPoint, ChannelWriter<ConnectionContext> acceptQueue, SlabMemoryPool memoryPool, IoUringOptions options, TransportThreadScheduler scheduler)
         {
             var domain = ipEndPoint.AddressFamily == AddressFamily.InterNetwork ? AF_INET : AF_INET6;
             LinuxSocket s = new LinuxSocket(domain, SOCK_STREAM, IPPROTO_TCP, blocking: true);

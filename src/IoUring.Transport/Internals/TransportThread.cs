@@ -83,94 +83,92 @@ namespace IoUring.Transport.Internals
             while (sqesAvailable-- > 0 && _asyncOperationQueue.TryDequeue(out var operation))
             {
                 var (socket, operationType) = operation;
-                if ((operationType & (OperationType.ReadPoll | OperationType.WritePoll)) != 0)
+                if (operationType == OperationType.WritePoll)
                 {
                     // hot path
-                    var context = _connections[socket];
-                    if (operationType == OperationType.ReadPoll)
-                    {
-                        context.ReadPoll(ring);
-                    }
-                    else
-                    {
-                        context.WritePoll(ring);
-                    }
+                    _connections[socket].WritePoll(ring);
                 }
                 else
                 {
-                    switch (operationType)
-                    {
-                        case OperationType.Unbind:
-                            _acceptSockets[socket].Unbid(ring);
-                            continue;
-                        case OperationType.RecvSocketPoll:
-                            _socketReceivers[socket].PollReceive(ring);
-                            continue;
-
-                        // below cases are only visited on ring overflow
-
-                        case OperationType.ReadPoll:
-                            _connections[socket].ReadPoll(ring);
-                            break;
-                        case OperationType.Read:
-                            _connections[socket].Read(ring);
-                            break;
-                        case OperationType.WritePoll:
-                            _connections[socket].WritePoll(ring);
-                            break;
-                        case OperationType.Write:
-                            _connections[socket].Write(ring);
-                            break;
-                        case OperationType.AcceptPoll:
-                            _acceptSockets[socket].AcceptPoll(ring);
-                            break;
-                        case OperationType.Accept:
-                            _acceptSockets[socket].Accept(ring);
-                            break;
-                        case OperationType.RecvSocket:
-                            _socketReceivers[socket].Receive(ring);
-                            break;
-                        case OperationType.Connect:
-                            ((OutboundConnection) _connections[socket]).Connect(ring);
-                            break;
-                        case OperationType.CancelRead:
-                        case OperationType.CancelReadPoll:
-                        case OperationType.CancelWrite:
-                        case OperationType.CancelWritePoll:
-                            _connections[socket].Cancel(ring, operationType & ~OperationType.CancelGeneric);
-                            break;
-                        case OperationType.CancelAccept:
-                            _acceptSockets[socket].Unbid(ring);
-                            break;
-                        case OperationType.CloseConnection:
-                            _connections[socket].Close(ring);
-                            break;
-                        case OperationType.CloseAcceptSocket:
-                            _acceptSockets[socket].Close(ring);
-                            break;
-                    }
-
-                    _asyncOperationStates.Remove(socket, out var state);
-                    switch (operationType)
-                    {
-                        case OperationType.AddAndAccept:
-                            AddAndAccept(socket, state);
-                            break;
-                        case OperationType.AddAndConnect:
-                            AddAndConnect(socket, state);
-                            break;
-                        case OperationType.CompleteInbound:
-                            _connections[socket].CompleteInbound(ring, (Exception) state);
-                            break;
-                        case OperationType.CompleteOutbound:
-                            _connections[socket].CompleteOutbound(ring, (Exception) state);
-                            break;
-                        case OperationType.Abort:
-                            if (_connections.TryGetValue(socket, out var connection))
-                                connection.Abort(ring, (ConnectionAbortedException) state);
-                            break;
-                    }
+                    RunLessFrequentAsyncOperations(socket, operationType);
                 }
+            }
+        }
+
+        private void RunLessFrequentAsyncOperations(int socket, OperationType operationType)
+        {
+            var ring = _ring;
+            switch (operationType)
+            {
+                case OperationType.ReadPoll:
+                    _connections[socket].ReadPoll(ring);
+                    return;
+                case OperationType.Unbind:
+                    _acceptSockets[socket].Unbid(ring);
+                    return;
+                case OperationType.RecvSocketPoll:
+                    _socketReceivers[socket].PollReceive(ring);
+                    return;
+
+                // below cases are only visited on ring overflow
+
+                case OperationType.Read:
+                    _connections[socket].Read(ring);
+                    return;
+                case OperationType.WritePoll:
+                    _connections[socket].WritePoll(ring);
+                    return;
+                case OperationType.Write:
+                    _connections[socket].Write(ring);
+                    return;
+                case OperationType.AcceptPoll:
+                    _acceptSockets[socket].AcceptPoll(ring);
+                    return;
+                case OperationType.Accept:
+                    _acceptSockets[socket].Accept(ring);
+                    return;
+                case OperationType.RecvSocket:
+                    _socketReceivers[socket].Receive(ring);
+                    return;
+                case OperationType.Connect:
+                    ((OutboundConnection) _connections[socket]).Connect(ring);
+                    return;
+                case OperationType.CancelRead:
+                case OperationType.CancelReadPoll:
+                case OperationType.CancelWrite:
+                case OperationType.CancelWritePoll:
+                    _connections[socket].Cancel(ring, operationType & ~OperationType.CancelGeneric);
+                    return;
+                case OperationType.CancelAccept:
+                    _acceptSockets[socket].Unbid(ring);
+                    return;
+                case OperationType.CloseConnection:
+                    _connections[socket].Close(ring);
+                    return;
+                case OperationType.CloseAcceptSocket:
+                    _acceptSockets[socket].Close(ring);
+                    return;
+            }
+
+            _asyncOperationStates.Remove(socket, out var state);
+            switch (operationType)
+            {
+                case OperationType.AddAndAccept:
+                    AddAndAccept(socket, state);
+                    return;
+                case OperationType.AddAndConnect:
+                    AddAndConnect(socket, state);
+                    return;
+                case OperationType.CompleteInbound:
+                    _connections[socket].CompleteInbound(ring, (Exception) state);
+                    return;
+                case OperationType.CompleteOutbound:
+                    _connections[socket].CompleteOutbound(ring, (Exception) state);
+                    return;
+                case OperationType.Abort:
+                    if (_connections.TryGetValue(socket, out var connection))
+                        connection.Abort(ring, (ConnectionAbortedException) state);
+                    return;
             }
         }
 
@@ -198,51 +196,57 @@ namespace IoUring.Transport.Internals
                 // hot path
                 switch (operationType)
                 {
-                    case OperationType.ReadPoll:
-                        ctx.CompleteReadPoll(ring, result);
-                        return;
                     case OperationType.Read:
                         ctx.CompleteRead(ring, result);
                         return;
-                    case OperationType.WritePoll:
-                        ctx.CompleteWritePoll(ring, result);
+                    case OperationType.ReadPoll:
+                        ctx.CompleteReadPoll(ring, result);
                         return;
                     case OperationType.Write:
                         ctx.CompleteWrite(ring, result);
+                        return;
+                    case OperationType.WritePoll:
+                        ctx.CompleteWritePoll(ring, result);
                         return;
                 }
             }
             else
             {
-                switch (operationType)
-                {
-                    case OperationType.Accept:
-                        CompleteAccept(socket, result);
-                        return;
-                    case OperationType.CancelAccept:
-                        _acceptSockets[socket].Close(ring);
-                        return;
-                    case OperationType.CloseAcceptSocket:
-                        CompleteCloseAcceptSocket(socket);
-                        return;
-                    case OperationType.RecvSocketPoll:
-                        _socketReceivers[socket].CompleteReceivePoll(ring, result);
-                        return;
-                    case OperationType.RecvSocket:
-                        CompleteSocketReceive(socket, result);
-                        return;
-                }
+                CompleteLessFrequentOperations(socket, operationType, result);
+            }
+        }
 
-                if (!_connections.TryGetValue(socket, out var context)) return;
-                switch (operationType)
-                {
-                    case OperationType.Connect:
-                        CompleteConnect(ring, (OutboundConnection) context, result);
-                        return;
-                    case OperationType.CloseConnection:
-                        CompleteCloseConnection(context, socket);
-                        return;
-                }
+        private void CompleteLessFrequentOperations(int socket, OperationType operationType, int result)
+        {
+            var ring = _ring;
+            switch (operationType)
+            {
+                case OperationType.Accept:
+                    CompleteAccept(socket, result);
+                    return;
+                case OperationType.CancelAccept:
+                    _acceptSockets[socket].Close(ring);
+                    return;
+                case OperationType.CloseAcceptSocket:
+                    CompleteCloseAcceptSocket(socket);
+                    return;
+                case OperationType.RecvSocketPoll:
+                    _socketReceivers[socket].CompleteReceivePoll(ring, result);
+                    return;
+                case OperationType.RecvSocket:
+                    CompleteSocketReceive(socket, result);
+                    return;
+            }
+
+            if (!_connections.TryGetValue(socket, out var context)) return;
+            switch (operationType)
+            {
+                case OperationType.Connect:
+                    CompleteConnect(ring, (OutboundConnection) context, result);
+                    return;
+                case OperationType.CloseConnection:
+                    CompleteCloseConnection(context, socket);
+                    return;
             }
         }
 

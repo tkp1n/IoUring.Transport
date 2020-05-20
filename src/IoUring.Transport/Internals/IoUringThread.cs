@@ -99,7 +99,7 @@ namespace IoUring.Transport.Internals
             var eventFdSubmissionAvailable = _ring.TryGetSubmissionQueueEntryUnsafe(out var eventFdSubmission);
             uint skip = 1;
 
-            while (_ring.TryRead(out var completion))
+            foreach (var completion in _ring.Completions)
             {
                 var result = completion.result;
                 var (socket, operationType) = AsyncOperation.FromUlong(completion.userData);

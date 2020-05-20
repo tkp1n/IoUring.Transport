@@ -30,7 +30,7 @@
     </ItemGroup>
 
     <ItemGroup>
-      <PackageReference Include="IoUring" Version="0.2.0-*" />
+      <PackageReference Include="IoUring" Version="0.3.0-*" />
     </ItemGroup>
 
     <ItemGroup>

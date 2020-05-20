@@ -1,5 +1,6 @@
 using System;
 using System.Buffers;
+using System.Diagnostics;
 using System.IO.Pipelines;
 using System.Net;
 using System.Runtime.CompilerServices;
@@ -33,7 +34,7 @@ namespace IoUring.Transport.Internals
         // Copied from LibuvTransportOptions.MaxWriteBufferSize
         private const int PauseOutputWriterThreshold = 64 * 1024;
 
-        private readonly SlabMemoryPool _memoryPool;
+        private const int MaxBufferSize = 4096;
 
         private readonly Action _onOnFlushedToApp;
         private readonly Action _onReadFromApp;
@@ -54,14 +55,16 @@ namespace IoUring.Transport.Internals
         private byte _writeIoVecsInUse;
         private int _state;
 
-        protected IoUringConnection(LinuxSocket socket, EndPoint local, EndPoint remote, SlabMemoryPool memoryPool, IoUringOptions options, TransportThreadScheduler scheduler)
+        protected IoUringConnection(LinuxSocket socket, EndPoint local, EndPoint remote, MemoryPool<byte> memoryPool, IoUringOptions options, TransportThreadScheduler scheduler)
         {
             Socket = socket;
 
             LocalEndPoint = local;
             RemoteEndPoint = remote;
 
-            _memoryPool = memoryPool;
+            MemoryPool = memoryPool;
+            Debug.Assert(MaxBufferSize == MemoryPool.MaxBufferSize);
+
             _scheduler = scheduler;
 
             _connectionClosedTokenSource = new CancellationTokenSource();
@@ -89,7 +92,7 @@ namespace IoUring.Transport.Internals
 
         public LinuxSocket Socket { get; }
 
-        public override MemoryPool<byte> MemoryPool => _memoryPool;
+        public override MemoryPool<byte> MemoryPool { get; }
 
         private unsafe iovec* ReadVecs => _iovec;
         private unsafe iovec* WriteVecs => _iovec + ReadIOVecCount;

@@ -15,7 +15,7 @@ namespace IoUring.Transport.Internals.Outbound
         private readonly byte[] _addr = GC.AllocateUninitializedArray<byte>(SizeOf.sockaddr_storage, pinned: true);
         private TaskCompletionSource<ConnectionContext> _connectCompletion;
 
-        private OutboundConnection(LinuxSocket socket, EndPoint remote, SlabMemoryPool memoryPool, IoUringOptions options, TransportThreadScheduler scheduler, TaskCompletionSource<ConnectionContext> connectCompletion)
+        private OutboundConnection(LinuxSocket socket, EndPoint remote, MemoryPool<byte> memoryPool, IoUringOptions options, TransportThreadScheduler scheduler, TaskCompletionSource<ConnectionContext> connectCompletion)
             : base(socket, null, remote, memoryPool, options, scheduler)
         {
             unsafe
@@ -44,7 +44,7 @@ namespace IoUring.Transport.Internals.Outbound
             Features.Set<IConnectionInherentKeepAliveFeature>(this);
         }
 
-        public static OutboundConnection Create(EndPoint endpoint, TaskCompletionSource<ConnectionContext> connectCompletion, SlabMemoryPool memoryPool, IoUringOptions options, TransportThreadScheduler scheduler)
+        public static OutboundConnection Create(EndPoint endpoint, TaskCompletionSource<ConnectionContext> connectCompletion, MemoryPool<byte> memoryPool, IoUringOptions options, TransportThreadScheduler scheduler)
         {
             LinuxSocket s = default;
             switch (endpoint)

@@ -13,7 +13,7 @@ namespace IoUring.Transport.Internals.Inbound
     {
         private readonly LinuxSocket _recipient;
         private readonly EndPoint _endPoint;
-        private readonly SlabMemoryPool _memoryPool;
+        private readonly MemoryPool<byte> _memoryPool;
         private readonly IoUringOptions _options;
         private readonly TransportThreadScheduler _scheduler;
         private readonly byte[] _dummyBuffer = GC.AllocateUninitializedArray<byte>(1, pinned: true);
@@ -22,7 +22,7 @@ namespace IoUring.Transport.Internals.Inbound
         private readonly byte[] _header = GC.AllocateUninitializedArray<byte>(SizeOf.msghdr, pinned: true);
         private volatile bool _disposed;
 
-        public SocketReceiver(LinuxSocket recipient, ChannelWriter<ConnectionContext> acceptQueue, EndPoint endPoint, SlabMemoryPool memoryPool, IoUringOptions options, TransportThreadScheduler scheduler)
+        public SocketReceiver(LinuxSocket recipient, ChannelWriter<ConnectionContext> acceptQueue, EndPoint endPoint, MemoryPool<byte> memoryPool, IoUringOptions options, TransportThreadScheduler scheduler)
         {
             _recipient = recipient;
             AcceptQueue = acceptQueue;

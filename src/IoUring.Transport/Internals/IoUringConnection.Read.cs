@@ -50,23 +50,21 @@ namespace IoUring.Transport.Internals
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private int DetermineReadAllocation()
         {
-            var maxBufferSize = _memoryPool.MaxBufferSize;
-
             int lastRead = _state; // state is amount of bytes read previously
             int reserve;
 
-            if (lastRead < maxBufferSize)
+            if (lastRead < MaxBufferSize)
             {
-                // This is the first read or we've read less than maxBufferSize, let's not ask for more this time either
-                reserve = maxBufferSize;
+                // This is the first read or we've read less than MaxBufferSize, let's not ask for more this time either
+                reserve = MaxBufferSize;
             }
             else
             {
-                // We've read maxBufferSize last time, there may be much more... lets' check
+                // We've read MaxBufferSize last time, there may be much more... lets' check
                 reserve = Socket.GetReadableBytes();
                 if (reserve == 0)
                 {
-                    reserve = maxBufferSize;
+                    reserve = MaxBufferSize;
                 }
             }
 
@@ -76,23 +74,22 @@ namespace IoUring.Transport.Internals
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private unsafe int PrepareReadIoVecs(int memoryRequirement)
         {
-            int maxBufferSize = _memoryPool.MaxBufferSize;
-            memoryRequirement = Math.Min(memoryRequirement, maxBufferSize * ReadIOVecCount);
+            memoryRequirement = Math.Min(memoryRequirement, MaxBufferSize * ReadIOVecCount);
             int i = 0;
             int advanced = 0;
             var writer = Inbound;
             var readVecs = ReadVecs;
             var handles = ReadHandles;
-            while (memoryRequirement > maxBufferSize)
+            while (memoryRequirement > MaxBufferSize)
             {
-                var memory = writer.GetMemory(maxBufferSize);
+                var memory = writer.GetMemory(MaxBufferSize);
                 var handle = memory.Pin();
 
                 readVecs[i].iov_base = handle.Pointer;
                 readVecs[i].iov_len = memory.Length;
                 handles[i] = handle;
 
-                writer.Advance(maxBufferSize);
+                writer.Advance(MaxBufferSize);
                 i++;
                 advanced += memory.Length;
                 memoryRequirement -= memory.Length;
@@ -147,7 +144,7 @@ namespace IoUring.Transport.Internals
 
             int advanced = _state;
             uint toAdvance = (uint) (result - advanced);
-            if (toAdvance > _memoryPool.MaxBufferSize)
+            if (toAdvance > MaxBufferSize)
             {
                 ThrowHelper.ThrowNewInvalidOperationException();
             }

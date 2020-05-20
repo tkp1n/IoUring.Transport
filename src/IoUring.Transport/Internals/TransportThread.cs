@@ -22,7 +22,7 @@ namespace IoUring.Transport.Internals
         private readonly Dictionary<int, IoUringConnection> _connections = new Dictionary<int, IoUringConnection>();
         private readonly ConcurrentDictionary<int, SocketReceiver> _socketReceivers = new ConcurrentDictionary<int, SocketReceiver>();
         private readonly TransportThreadScheduler _scheduler;
-        private readonly SlabMemoryPool _memoryPool;
+        private readonly MemoryPool<byte> _memoryPool;
 
         public TransportThread(IoUringOptions options, int cpuId)
             : base("IoUring Transport Thread", options, cpuId)

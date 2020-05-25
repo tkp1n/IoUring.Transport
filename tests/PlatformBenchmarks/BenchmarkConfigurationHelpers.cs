@@ -79,7 +79,7 @@ namespace PlatformBenchmarks
 
             if (string.Equals(address.Host, "localhost", StringComparison.OrdinalIgnoreCase))
             {
-                ip = IPAddress.Loopback;
+                ip = IPAddress.Any;
             }
             else if (!IPAddress.TryParse(address.Host, out ip))
             {

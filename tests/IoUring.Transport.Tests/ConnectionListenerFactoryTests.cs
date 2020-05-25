@@ -23,20 +23,16 @@ namespace IoUring.Transport.Tests
                 ApplicationSchedulingMode = schedulerMode,
                 RingSize = ringSize
             });
-            var transport = new IoUringTransport(options);
+            await using var transport = new IoUringTransport(options);
 
-            try
+            var listenerFactory = new ConnectionListenerFactory(transport, options);
+            await using (var listener = await listenerFactory.BindAsync(endPoint()))
             {
-                var listenerFactory = new ConnectionListenerFactory(transport, options);
-                var listener = await listenerFactory.BindAsync(endPoint());
-
-                try
+                for (int i = 0; i < 3; i++)
                 {
-                    for (int i = 0; i < 3; i++)
+                    var client = new EchoClient(listener.EndPoint);
+                    await using (var connection = await listener.AcceptAsync())
                     {
-                        var client = new EchoClient(listener.EndPoint);
-                        var connection = await listener.AcceptAsync();
-
                         for (int j = 0; j < 3; j++)
                         {
                             var exchange = client.ExchangeData(length);
@@ -46,19 +42,9 @@ namespace IoUring.Transport.Tests
 
                         await connection.Transport.Output.CompleteAsync();
                         await connection.Transport.Input.CompleteAsync();
-                        await connection.DisposeAsync();
-                        client.Close();
                     }
+                    client.Close();
                 }
-                finally
-                {
-                    await listener.UnbindAsync();
-                    await listener.DisposeAsync();
-                }
-            }
-            finally
-            {
-                await transport.DisposeAsync();
             }
         }
 

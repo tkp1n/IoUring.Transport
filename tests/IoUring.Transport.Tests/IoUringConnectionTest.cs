@@ -1,5 +1,4 @@
 using System;
-using System.Buffers;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Pipelines;
@@ -10,24 +9,28 @@ namespace IoUring.Transport.Tests
 {
     public abstract class IoUringConnectionTest
     {
-        private static readonly MemoryPool<byte> _memoryPool = new SlabMemoryPool();
+        private const int MaxBufferSize = 4096;
+        private static readonly Func<EndPoint>[] EndPoints;
 
-        private static readonly Func<EndPoint>[] EndPoints =
+        static IoUringConnectionTest()
         {
-            () => new IPEndPoint(IPAddress.Parse("127.0.0.1"), 0),
-            () => new IPEndPoint(IPAddress.Parse("::1"), 0),
-            () => new UnixDomainSocketEndPoint($"{Path.GetTempPath()}/{Path.GetRandomFileName()}")
-        };
+            var endPoints = new List<Func<EndPoint>>();
+            if (Socket.OSSupportsIPv4) endPoints.Add(() => new IPEndPoint(IPAddress.Parse("127.0.0.1"), 0));
+            if (Socket.OSSupportsIPv6) endPoints.Add(() => new IPEndPoint(IPAddress.Parse("::1"), 0));
+            if (Socket.OSSupportsUnixDomainSockets) endPoints.Add(() => new UnixDomainSocketEndPoint($"{Path.GetTempPath()}/{Path.GetRandomFileName()}"));
+
+            EndPoints = endPoints.ToArray();
+        }
 
         private static readonly int[] Lengths =
         {
             1,
-            _memoryPool.MaxBufferSize - 1,
-            _memoryPool.MaxBufferSize,
-            _memoryPool.MaxBufferSize + 1,
-            (8 * _memoryPool.MaxBufferSize) - 1,
-            (8 * _memoryPool.MaxBufferSize),
-            (8 * _memoryPool.MaxBufferSize) + 1,
+            MaxBufferSize - 1,
+            MaxBufferSize,
+            MaxBufferSize + 1,
+            (8 * MaxBufferSize) - 1,
+            (8 * MaxBufferSize),
+            (8 * MaxBufferSize) + 1,
         };
 
         private static readonly PipeScheduler[] SchedulerModes =

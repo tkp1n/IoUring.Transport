@@ -83,16 +83,11 @@ namespace IoUring.Transport.Tests
             }
         }
 
-        public void Shutdown()
+        public void Dispose()
         {
             _disposed = true;
             _cts.Cancel();
             _socket.Close();
-        }
-
-        public void Dispose()
-        {
-            _disposed = true;
         }
     }
 }

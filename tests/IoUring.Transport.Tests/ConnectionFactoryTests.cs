@@ -25,36 +25,26 @@ namespace IoUring.Transport.Tests
         public async void SmokeTest(Func<EndPoint> endpoint, int length, PipeScheduler schedulerMode, int threadCount, int ringSize, bool threadAffinity)
         {
             using var server = new EchoServer(endpoint(), OutputHelper);
-            var transport = new IoUringTransport(Options.Create(new IoUringOptions
+            await using var transport = new IoUringTransport(Options.Create(new IoUringOptions
             {
                 ThreadCount = threadCount,
                 SetThreadAffinity = threadAffinity,
                 ApplicationSchedulingMode = schedulerMode,
                 RingSize = ringSize
             }));
-            var connectionFactory = new ConnectionFactory(transport);
+            await using var connectionFactory = new ConnectionFactory(transport);
 
-            try
+            for (int i = 0; i < 3; i++)
             {
-                for (int i = 0; i < 3; i++)
+                await using var connection = await connectionFactory.ConnectAsync(server.EndPoint);
+
+                for (int j = 0; j < 3; j++)
                 {
-                    var connection = await connectionFactory.ConnectAsync(server.EndPoint);
-
-                    for (int j = 0; j < 3; j++)
-                    {
-                        await SendReceiveData(connection.Transport, length);
-                    }
-
-                    await connection.Transport.Output.CompleteAsync();
-                    await connection.Transport.Input.CompleteAsync();
-                    await connection.DisposeAsync();
+                    await SendReceiveData(connection.Transport, length);
                 }
-            }
-            finally
-            {
-                server.Shutdown();
-                await connectionFactory.DisposeAsync();
-                await transport.DisposeAsync();
+
+                await connection.Transport.Output.CompleteAsync();
+                await connection.Transport.Input.CompleteAsync();
             }
         }
 

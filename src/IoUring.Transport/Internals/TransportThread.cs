@@ -131,7 +131,14 @@ namespace IoUring.Transport.Internals
                     _socketReceivers[socket].Receive(ring);
                     return;
                 case OperationType.Connect:
-                    ((OutboundConnection) _connections[socket]).Connect(ring);
+                    var context = (OutboundConnection) _connections[socket];
+                    if (context.Connect(ring))
+                    {
+                        CompleteConnect(ring, context, 0);
+                    }
+                    return;
+                case OperationType.WritePollDuringConnect:
+                    ((OutboundConnection) _connections[socket]).WritePollDuringConnect(ring);
                     return;
                 case OperationType.CancelRead:
                 case OperationType.CancelReadPoll:
@@ -181,9 +188,13 @@ namespace IoUring.Transport.Internals
 
         private void AddAndConnect(int socket, object context)
         {
+            var ring = _ring;
             var outboundConnectionContext = (OutboundConnection) context;
             _connections[socket] = outboundConnectionContext;
-            outboundConnectionContext.Connect(_ring);
+            if (outboundConnectionContext.Connect(ring))
+            {
+                CompleteConnect(ring, outboundConnectionContext, 0);
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -244,6 +255,9 @@ namespace IoUring.Transport.Internals
                 case OperationType.Connect:
                     CompleteConnect(ring, (OutboundConnection) context, result);
                     return;
+                case OperationType.WritePollDuringConnect:
+                    CompleteWritePollDuringConnect(result, context, ring);
+                    return;
                 case OperationType.CloseConnection:
                     CompleteCloseConnection(context, socket);
                     return;
@@ -292,6 +306,15 @@ namespace IoUring.Transport.Internals
 
             context.ReadPoll(ring);
             context.ReadFromApp(ring);
+        }
+
+        private static void CompleteWritePollDuringConnect(int result, IoUringConnection context, Ring ring)
+        {
+            if (((OutboundConnection) context).CompleteWritePollDuringConnect(ring, result))
+            {
+                context.ReadPoll(ring);
+                context.ReadFromApp(ring);
+            }
         }
 
         private void CompleteCloseConnection(IoUringConnection context, int socket)

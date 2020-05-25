@@ -47,7 +47,7 @@ namespace IoUring.Transport.Tests
 
         private static readonly int[] RingSize =
         {
-            2,
+            4,
             128
         };
 

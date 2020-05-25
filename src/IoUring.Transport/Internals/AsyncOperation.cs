@@ -7,33 +7,34 @@ namespace IoUring.Transport
     [Flags]
     internal enum OperationType : uint
     {
-        Read                = 1 << 0,
-        ReadPoll            = 1 << 1,
-        Write               = 1 << 2,
-        WritePoll           = 1 << 3,
-        EventFdReadPoll     = 1 << 4,
-        EventFdRead         = 1 << 5,
-        EventFdOperation    = EventFdReadPoll | EventFdRead,
-        Connect             = 1 << 6,
-        AcceptPoll          = 1 << 7,
-        Accept              = 1 << 8,
-        CompleteInbound     = 1 << 9,
-        CompleteOutbound    = 1 << 10,
-        CancelGeneric       = 1 << 11,
-        CancelAccept        = CancelGeneric | Accept,
-        CancelRead          = CancelGeneric | Read,
-        CancelReadPoll      = CancelGeneric | ReadPoll,
-        CancelWrite         = CancelGeneric | Write,
-        CancelWritePoll     = CancelGeneric | WritePoll,
-        Abort               = 1 << 12,
-        CloseConnection     = 1 << 13,
-        CloseAcceptSocket   = 1 << 14,
-        Unbind              = 1 << 15,
-        RecvSocketPoll      = 1 << 16,
-        RecvSocket          = 1 << 17,
-        Add                 = 1 << 18,
-        AddAndAccept        = Add | Accept,
-        AddAndConnect       = Add | Connect,
+        Read                   = 1 << 0,
+        ReadPoll               = 1 << 1,
+        Write                  = 1 << 2,
+        WritePoll              = 1 << 3,
+        EventFdReadPoll        = 1 << 4,
+        EventFdRead            = 1 << 5,
+        EventFdOperation       = EventFdReadPoll | EventFdRead,
+        Connect                = 1 << 6,
+        WritePollDuringConnect = 1 << 7,
+        AcceptPoll             = 1 << 8,
+        Accept                 = 1 << 9,
+        CompleteInbound        = 1 << 10,
+        CompleteOutbound       = 1 << 11,
+        CancelGeneric          = 1 << 12,
+        CancelAccept           = CancelGeneric | Accept,
+        CancelRead             = CancelGeneric | Read,
+        CancelReadPoll         = CancelGeneric | ReadPoll,
+        CancelWrite            = CancelGeneric | Write,
+        CancelWritePoll        = CancelGeneric | WritePoll,
+        Abort                  = 1 << 13,
+        CloseConnection        = 1 << 14,
+        CloseAcceptSocket      = 1 << 15,
+        Unbind                 = 1 << 16,
+        RecvSocketPoll         = 1 << 17,
+        RecvSocket             = 1 << 18,
+        Add                    = 1 << 19,
+        AddAndAccept           = Add | Accept,
+        AddAndConnect          = Add | Connect,
     }
 
     [StructLayout(LayoutKind.Explicit)]
@@ -75,6 +76,7 @@ namespace IoUring.Transport
         public static AsyncOperation ReadEventFd(int eventFd) => new AsyncOperation(eventFd, OperationType.EventFdRead);
         public static AsyncOperation AddAndConnect(int fd) => new AsyncOperation(fd, OperationType.AddAndConnect);
         public static AsyncOperation ConnectOn(int fd) => new AsyncOperation(fd, OperationType.Connect);
+        public static AsyncOperation WritePollDuringConnect(int fd) => new AsyncOperation(fd, OperationType.WritePollDuringConnect);
         public static AsyncOperation PollAcceptFrom(int fd) => new AsyncOperation(fd, OperationType.AcceptPoll);
         public static AsyncOperation AddAndAccept(int fd) => new AsyncOperation(fd, OperationType.AddAndAccept);
         public static AsyncOperation AcceptFrom(int fd) => new AsyncOperation(fd, OperationType.Accept);

@@ -38,6 +38,11 @@ namespace IoUring.Transport.Internals
             _asyncOperationQueue.Enqueue(AsyncOperation.ConnectOn(socket));
         }
 
+        public void ScheduleWritePollDuringComplete(int socket)
+        {
+            _asyncOperationQueue.Enqueue(AsyncOperation.WritePollDuringConnect(socket));
+        }
+
         public void ScheduleAsyncAddAndConnect(int socket, object state)
         {
             _asyncOperationStates[socket] = state;

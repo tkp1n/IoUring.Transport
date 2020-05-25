@@ -76,12 +76,70 @@ namespace IoUring.Transport.Internals.Outbound
         private unsafe sockaddr* Addr => (sockaddr*) MemoryHelper.UnsafeGetAddressOfPinnedArrayData(_addr);
         private socklen_t AddrLen { get; }
 
-        public unsafe void Connect(Ring ring)
+        public unsafe bool Connect(Ring ring)
         {
+            if (!ring.Supports(RingOperation.Connect))
+            {
+                // pre v5.5
+                if (Socket.Connect(Addr, AddrLen))
+                {
+                    return true;
+                }
+
+                // connect ongoing asynchronously until write poll completes
+                WritePollDuringConnect(ring);
+                return false;
+            }
+
             int socket = Socket;
             if (!ring.TryPrepareConnect(socket, Addr, AddrLen, AsyncOperation.ConnectOn(socket).AsUlong()))
             {
                 _scheduler.ScheduleConnect(socket);
+            }
+
+            return false;
+        }
+
+        public void WritePollDuringConnect(Ring ring)
+        {
+            var socket = Socket;
+            if (!ring.TryPreparePollAdd(socket, (ushort) POLLOUT, AsyncOperation.WritePollDuringConnect(socket).AsUlong()))
+            {
+                _scheduler.ScheduleWritePollDuringComplete(socket);
+            }
+        }
+
+        public bool CompleteWritePollDuringConnect(Ring ring, int result)
+        {
+            if (result < 0)
+            {
+                HandleCompleteWritePollDuringConnectError(ring, result);
+                return false;
+            }
+
+            var completeResult =  Socket.GetOption(SOL_SOCKET, SO_ERROR);
+            if (completeResult != 0)
+            {
+                _connectCompletion.TrySetException(new ErrnoException(completeResult));
+            }
+            else
+            {
+                SetupPostSuccessfulConnect();
+            }
+
+            return true;
+        }
+
+        private void HandleCompleteWritePollDuringConnectError(Ring ring, int result)
+        {
+            var err = -result;
+            if (err == EAGAIN || err == EWOULDBLOCK || err == EINTR)
+            {
+                WritePollDuringConnect(ring);
+            }
+            else
+            {
+                ThrowHelper.ThrowNewErrnoException(err);
             }
         }
 
@@ -93,11 +151,7 @@ namespace IoUring.Transport.Internals.Outbound
                 return;
             }
 
-            var ep = Socket.GetLocalAddress();
-            LocalEndPoint = ep ?? RemoteEndPoint;
-
-            _connectCompletion.TrySetResult(this);
-            _connectCompletion = null;
+            SetupPostSuccessfulConnect();
         }
 
         private void HandleCompleteConnectError(Ring ring, int result)
@@ -110,6 +164,15 @@ namespace IoUring.Transport.Internals.Outbound
             {
                 _connectCompletion.TrySetException(new ErrnoException(-result));
             }
+        }
+
+        private void SetupPostSuccessfulConnect()
+        {
+            var ep = Socket.GetLocalAddress();
+            LocalEndPoint = ep ?? RemoteEndPoint;
+
+            _connectCompletion.TrySetResult(this);
+            _connectCompletion = null;
         }
     }
 }

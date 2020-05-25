@@ -29,6 +29,16 @@ namespace IoUring.Transport.Internals
             _fd = fd;
         }
 
+        public unsafe int GetOption(int level, int option)
+        {
+            int value;
+            socklen_t len = sizeof(int);
+            var rv = getsockopt(_fd, level, option, &value, &len);
+            if (rv == -1) ThrowHelper.ThrowNewErrnoException();
+
+            return value;
+        }
+
         public unsafe void SetOption(int level, int option, int value)
         {
             var rv = setsockopt(_fd, level, option, (byte*) &value, 4);
@@ -97,6 +107,28 @@ namespace IoUring.Transport.Internals
         {
             var rv = listen(_fd, backlog);
             if (rv < 0) ThrowHelper.ThrowNewErrnoException();
+        }
+
+        public unsafe bool Connect(sockaddr* addr, socklen_t addrLen)
+        {
+            int rv;
+            int error = 0;
+            do
+            {
+                rv = connect(_fd, addr, addrLen);
+            } while (rv == -1 && (error = errno) == EINTR);
+
+            if (rv == -1)
+            {
+                if (error != EINPROGRESS)
+                {
+                    ThrowHelper.ThrowNewErrnoException(error);
+                }
+
+                return false;
+            }
+
+            return true;
         }
 
         public unsafe EndPoint GetLocalAddress()

@@ -41,7 +41,7 @@ namespace IoUring.Transport.Internals.Inbound
         public static AcceptSocket Bind(IPEndPoint ipEndPoint, ChannelWriter<ConnectionContext> acceptQueue, MemoryPool<byte> memoryPool, IoUringOptions options, TransportThreadScheduler scheduler)
         {
             var domain = ipEndPoint.AddressFamily == AddressFamily.InterNetwork ? AF_INET : AF_INET6;
-            LinuxSocket s = new LinuxSocket(domain, SOCK_STREAM, IPPROTO_TCP, blocking: true);
+            LinuxSocket s = new LinuxSocket(domain, SOCK_STREAM, IPPROTO_TCP, blocking: false);
             s.SetOption(SOL_SOCKET, SO_REUSEADDR, 1);
             s.SetOption(SOL_SOCKET, SO_REUSEPORT, 1);
             s.Bind(ipEndPoint);
@@ -87,15 +87,16 @@ namespace IoUring.Transport.Internals.Inbound
             }
         }
 
-        public void CompleteAcceptPoll(Ring ring, int result)
+        public bool CompleteAcceptPoll(Ring ring, int result, out LinuxSocket socket)
         {
             if (result < 0)
             {
                 HandleCompleteAcceptPollError(ring, result);
-                return;
+                socket = default;
+                return false;
             }
 
-            Accept(ring);
+            return TryAccept(ring, out socket);
         }
 
         private void HandleCompleteAcceptPollError(Ring ring, int result)
@@ -113,7 +114,7 @@ namespace IoUring.Transport.Internals.Inbound
             }
         }
 
-        public void Accept(Ring ring)
+        public bool TryAccept(Ring ring, out LinuxSocket socket)
         {
             if (IsIpSocket)
             {
@@ -121,11 +122,21 @@ namespace IoUring.Transport.Internals.Inbound
                 *AddrLen = SizeOf.sockaddr_storage;
             }
 
-            int socket = Socket;
-            if (!ring.TryPrepareAccept(socket, Addr, AddrLen, SOCK_NONBLOCK | SOCK_CLOEXEC, AsyncOperation.AcceptFrom(socket).AsUlong()))
+            if (!ring.Supports(RingOperation.Accept))
             {
-                _scheduler.ScheduleAccept(socket);
+                // pre v5.5
+                socket = Socket.Accept4(Addr, AddrLen, SOCK_NONBLOCK | SOCK_CLOEXEC);
+                return true;
             }
+
+            socket = default;
+            int acceptSocket = Socket;
+            if (!ring.TryPrepareAccept(acceptSocket, Addr, AddrLen, SOCK_NONBLOCK | SOCK_CLOEXEC, AsyncOperation.AcceptFrom(acceptSocket).AsUlong()))
+            {
+                _scheduler.ScheduleAccept(acceptSocket);
+            }
+
+            return false;
         }
 
         public bool TryCompleteAcceptSocket(Ring ring, int result, out LinuxSocket socket)
@@ -148,7 +159,7 @@ namespace IoUring.Transport.Internals.Inbound
             {
                 if (!IsUnbinding)
                 {
-                    Accept(ring);
+                    TryAccept(ring, out _); // always runs on ring
                 }
             }
             else if (!(err == ECANCELED && IsUnbinding))

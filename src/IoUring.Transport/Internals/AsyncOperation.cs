@@ -33,7 +33,7 @@ namespace IoUring.Transport
         RecvSocketPoll         = 1 << 17,
         RecvSocket             = 1 << 18,
         Add                    = 1 << 19,
-        AddAndAccept           = Add | Accept,
+        AddAndAcceptPoll       = Add | AcceptPoll,
         AddAndConnect          = Add | Connect,
     }
 
@@ -78,7 +78,7 @@ namespace IoUring.Transport
         public static AsyncOperation ConnectOn(int fd) => new AsyncOperation(fd, OperationType.Connect);
         public static AsyncOperation WritePollDuringConnect(int fd) => new AsyncOperation(fd, OperationType.WritePollDuringConnect);
         public static AsyncOperation PollAcceptFrom(int fd) => new AsyncOperation(fd, OperationType.AcceptPoll);
-        public static AsyncOperation AddAndAccept(int fd) => new AsyncOperation(fd, OperationType.AddAndAccept);
+        public static AsyncOperation AddAndAcceptPoll(int fd) => new AsyncOperation(fd, OperationType.AddAndAcceptPoll);
         public static AsyncOperation AcceptFrom(int fd) => new AsyncOperation(fd, OperationType.Accept);
         public static AsyncOperation CompleteInboundOf(int fd) => new AsyncOperation(fd, OperationType.CompleteInbound);
         public static AsyncOperation CompleteOutboundOf(int fd) => new AsyncOperation(fd, OperationType.CompleteOutbound);

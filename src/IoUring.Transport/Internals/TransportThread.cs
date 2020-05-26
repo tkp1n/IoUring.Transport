@@ -44,7 +44,7 @@ namespace IoUring.Transport.Internals
         {
             var context = AcceptSocket.Bind(endpoint, connectionSource, _memoryPool, _options, _scheduler);
             _acceptSocketsPerEndPoint[(IPEndPoint) context.EndPoint] = context;
-            _scheduler.ScheduleAsyncAddAndAccept(context.Socket, context);
+            _scheduler.ScheduleAsyncAddAndAcceptPoll(context.Socket, context);
 
             return context.EndPoint;
         }
@@ -125,7 +125,7 @@ namespace IoUring.Transport.Internals
                     _acceptSockets[socket].AcceptPoll(ring);
                     return;
                 case OperationType.Accept:
-                    _acceptSockets[socket].Accept(ring);
+                    _acceptSockets[socket].TryAccept(ring, out _); // will always run via ring (return false)
                     return;
                 case OperationType.RecvSocket:
                     _socketReceivers[socket].Receive(ring);
@@ -160,8 +160,8 @@ namespace IoUring.Transport.Internals
             _asyncOperationStates.Remove(socket, out var state);
             switch (operationType)
             {
-                case OperationType.AddAndAccept:
-                    AddAndAccept(socket, state);
+                case OperationType.AddAndAcceptPoll:
+                    AddAndAcceptPoll(socket, state);
                     return;
                 case OperationType.AddAndConnect:
                     AddAndConnect(socket, state);
@@ -179,11 +179,11 @@ namespace IoUring.Transport.Internals
             }
         }
 
-        private void AddAndAccept(int socket, object state)
+        private void AddAndAcceptPoll(int socket, object state)
         {
             var acceptSocket = (AcceptSocket) state;
             _acceptSockets[socket] = acceptSocket;
-            acceptSocket.Accept(_ring);
+            acceptSocket.AcceptPoll(_ring);
         }
 
         private void AddAndConnect(int socket, object context)
@@ -232,8 +232,11 @@ namespace IoUring.Transport.Internals
             var ring = _ring;
             switch (operationType)
             {
+                case OperationType.AcceptPoll:
+                    CompleteAcceptPoll(socket, result);
+                    return;
                 case OperationType.Accept:
-                    CompleteAccept(socket, result);
+                    CompleteAcceptViaRing(socket, result);
                     return;
                 case OperationType.CancelAccept:
                     _acceptSockets[socket].Close(ring);
@@ -264,19 +267,41 @@ namespace IoUring.Transport.Internals
             }
         }
 
-        private void CompleteAccept(int socket, int result)
+        private void CompleteAcceptPoll(int socket, int result)
+        {
+            var ring = _ring;
+            if (!_acceptSockets.TryGetValue(socket, out var acceptSocket)) return; // socket already closed
+            if (acceptSocket.CompleteAcceptPoll(ring, result, out var acceptedSocket)) // prepares accept via ring or accepts via syscall
+            {
+                // already accepted via syscall pre v5.5
+                acceptSocket.TryCompleteAccept(ring, acceptedSocket, out var connection); // will always succeed as we already accepted
+                CompleteAcceptDirect(connection, acceptSocket, ring);
+            }
+        }
+
+        private void CompleteAcceptViaRing(int socket, int result)
         {
             var ring = _ring;
             if (!_acceptSockets.TryGetValue(socket, out var acceptSocket)) return; // socket already closed
             if (acceptSocket.TryCompleteAccept(ring, result, out var connection))
             {
-                _connections[connection.Socket] = connection;
-                acceptSocket.AcceptQueue.TryWrite(connection);
-
-                acceptSocket.Accept(ring);
-                connection.ReadPoll(ring);
-                connection.ReadFromApp(ring);
+                CompleteAccept(connection, acceptSocket, ring);
             }
+        }
+
+        private void CompleteAcceptDirect(InboundConnection connection, AcceptSocket acceptSocket, Ring ring)
+        {
+            CompleteAccept(connection, acceptSocket, ring);
+        }
+
+        private void CompleteAccept(InboundConnection connection, AcceptSocket acceptSocket, Ring ring)
+        {
+            _connections[connection.Socket] = connection;
+            acceptSocket.AcceptQueue.TryWrite(connection);
+
+            acceptSocket.AcceptPoll(ring);
+            connection.ReadPoll(ring);
+            connection.ReadFromApp(ring);
         }
 
         private void CompleteCloseAcceptSocket(int socket)

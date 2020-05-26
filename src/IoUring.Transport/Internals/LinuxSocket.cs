@@ -109,6 +109,21 @@ namespace IoUring.Transport.Internals
             if (rv < 0) ThrowHelper.ThrowNewErrnoException();
         }
 
+        public unsafe LinuxSocket Accept4(sockaddr* addr, socklen_t* addrLen, int flags)
+        {
+            int rv;
+            int error = 0;
+            do
+            {
+                rv = accept4(_fd, addr, addrLen, flags);
+            } while (rv == -1 && Retry(error = errno));
+            if (rv == -1) ThrowHelper.ThrowNewErrnoException(error);
+
+            return rv;
+
+            static bool Retry(int err) => err == EINTR || err == EAGAIN || err == EWOULDBLOCK;
+        }
+
         public unsafe bool Connect(sockaddr* addr, socklen_t addrLen)
         {
             int rv;

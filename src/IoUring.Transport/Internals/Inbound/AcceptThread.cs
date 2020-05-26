@@ -86,7 +86,7 @@ namespace IoUring.Transport.Internals.Inbound
                     // below cases are only visited on ring overflow
 
                     case OperationType.Accept:
-                        _acceptSockets[socket].Accept(ring);
+                        _acceptSockets[socket].TryAccept(ring, out _); // will always run via ring (return false)
                         break;
                     case OperationType.CancelAccept:
                         _acceptSockets[socket].Unbid(ring);
@@ -105,10 +105,14 @@ namespace IoUring.Transport.Internals.Inbound
             switch (operationType)
             {
                 case OperationType.AcceptPoll:
-                    _acceptSockets[socket].CompleteAcceptPoll(ring, result);
+                    var acceptSocket = _acceptSockets[socket];
+                    if (acceptSocket.CompleteAcceptPoll(ring, result, out var acceptedSocket))
+                    {
+                        CompleteAcceptDirect(acceptSocket, acceptedSocket, ring);
+                    }
                     return;
                 case OperationType.Accept:
-                    CompleteAccept(socket, result);
+                    CompleteAcceptViaRing(socket, result);
                     return;
                 case OperationType.CancelAccept:
                     _acceptSockets[socket].Close(ring);
@@ -119,18 +123,28 @@ namespace IoUring.Transport.Internals.Inbound
             }
         }
 
-        private void CompleteAccept(int socket, int result)
+        private void CompleteAcceptViaRing(int socket, int result)
         {
             var ring = _ring;
             if (!_acceptSockets.TryGetValue(socket, out var acceptSocket)) return; // socket already closed
             if (acceptSocket.TryCompleteAcceptSocket(ring, result, out var acceptedSocket))
             {
-                var handlers = acceptSocket.Handlers;
-                var idx = (_schedulerIndex++) % handlers.Length;
-                acceptedSocket.TransferAndClose(handlers[idx]);
-
-                acceptSocket.AcceptPoll(ring);
+                CompleteAccept(acceptSocket, acceptedSocket, ring);
             }
+        }
+
+        private void CompleteAcceptDirect(AcceptSocket acceptSocket, LinuxSocket acceptedSocket, Ring ring)
+        {
+            CompleteAccept(acceptSocket, acceptedSocket, ring);
+        }
+
+        private void CompleteAccept(AcceptSocket acceptSocket, LinuxSocket acceptedSocket, Ring ring)
+        {
+            var handlers = acceptSocket.Handlers;
+            var idx = (_schedulerIndex++) % handlers.Length;
+            acceptedSocket.TransferAndClose(handlers[idx]);
+
+            acceptSocket.AcceptPoll(ring);
         }
 
         private void CompleteCloseAcceptSocket(int socket)

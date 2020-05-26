@@ -21,10 +21,10 @@ namespace IoUring.Transport.Internals
             _asyncOperationQueue.Enqueue(AsyncOperation.PollAcceptFrom(socket));
         }
 
-        public void ScheduleAsyncAddAndAccept(int socket, object acceptSocket)
+        public void ScheduleAsyncAddAndAcceptPoll(int socket, object acceptSocket)
         {
             _asyncOperationStates[socket] = acceptSocket;
-            _asyncOperationQueue.Enqueue(AsyncOperation.AddAndAccept(socket));
+            _asyncOperationQueue.Enqueue(AsyncOperation.AddAndAcceptPoll(socket));
             _unblockHandle.UnblockIfRequired();
         }
 

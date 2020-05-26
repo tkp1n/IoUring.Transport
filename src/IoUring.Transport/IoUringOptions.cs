@@ -57,7 +57,7 @@ namespace IoUring.Transport
 
         public PipeScheduler ApplicationSchedulingMode { get; set; } = PipeScheduler.ThreadPool;
         public bool TcpNoDelay { get; set; } = true;
-        public int RingSize { get; set; } = 4096;
+        public int RingSize { get; set; } = 128;
         public int ListenBacklog { get; set; } = 128;
     }
 }

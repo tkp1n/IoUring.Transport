@@ -14,7 +14,7 @@ namespace IoUring.Transport.Internals
 
                 var osVersion = Environment.OSVersion.Version;
                 if (osVersion.Major > 5) return true;
-                return osVersion.Major == 5 && osVersion.Minor >= 5;
+                return osVersion.Major == 5 && osVersion.Minor >= 4;
             }
         }
     }

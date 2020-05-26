@@ -184,7 +184,19 @@ namespace IoUring.Transport.Internals.Inbound
         {
             IsUnbinding = true;
             int socket = Socket;
-            if (!ring.TryPrepareCancel(AsyncOperation.AcceptFrom(socket).AsUlong(), AsyncOperation.CancelAccept(socket).AsUlong()))
+
+            bool prepared;
+            if (ring.Supports(RingOperation.Cancel))
+            {
+                prepared = ring.TryPrepareCancel(AsyncOperation.AcceptFrom(socket).AsUlong(), AsyncOperation.CancelAccept(socket).AsUlong());
+            }
+            else
+            {
+                // pre v5.5
+                prepared = ring.TryPrepareNop(AsyncOperation.CancelAccept(socket).AsUlong());
+            }
+
+            if (!prepared)
             {
                 _scheduler.ScheduleCancel(AsyncOperation.CancelAccept(socket));
             }

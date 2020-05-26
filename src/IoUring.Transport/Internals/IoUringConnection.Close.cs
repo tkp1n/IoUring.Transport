@@ -85,6 +85,8 @@ namespace IoUring.Transport.Internals
 
         public void Cancel(Ring ring, OperationType op)
         {
+            if (!ring.Supports(RingOperation.Cancel)) return;
+
             int socket = Socket;
             if (!ring.TryPrepareCancel(new AsyncOperation(socket, op).AsUlong(), AsyncOperation.CancelOperation(op, socket).AsUlong()))
             {

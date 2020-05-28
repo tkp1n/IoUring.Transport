@@ -70,7 +70,7 @@ namespace PlatformBenchmarks
 
             if (string.IsNullOrEmpty(url))
             {
-                return new IPEndPoint(IPAddress.Loopback, 8080);
+                return new IPEndPoint(IPAddress.Any, 8080);
             }
 
             var address = BindingAddress.Parse(url);

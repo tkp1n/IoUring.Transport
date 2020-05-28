@@ -1,3 +1,4 @@
+using System.IO.Pipelines;
 using IoUring.Transport;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -20,7 +21,10 @@ namespace IoUring.TestApp
         public void ConfigureServices(IServiceCollection services)
         {
             services.AddHttpClient();
-            services.AddIoUringTransport();
+            services.AddIoUringTransport(options =>
+            {
+                options.ApplicationSchedulingMode = PipeScheduler.Inline;
+            });
             services.AddControllers();
         }
 

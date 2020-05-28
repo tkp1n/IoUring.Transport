@@ -56,7 +56,7 @@ namespace PlatformBenchmarks
                 {
                     services.AddIoUringTransport(options =>
                     {
-
+                        options.ApplicationSchedulingMode = PipeScheduler.Inline;
                     });
                 });
             }

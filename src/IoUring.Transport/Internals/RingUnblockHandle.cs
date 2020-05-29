@@ -13,17 +13,33 @@ namespace IoUring.Transport.Internals
 
         private readonly LinuxSocket _eventfd;
         private readonly byte[] _eventfdBytes = GC.AllocateUninitializedArray<byte>(8, pinned: true);
-        private readonly byte[] _eventfdIoVecBytes = GC.AllocateUninitializedArray<byte>(SizeOf.iovec, pinned: true);
+        private readonly byte[] _eventfdIoVecBytes;
         private int _blockingMode;
+        private bool _supportsRead;
+        private bool _supportsFastPoll;
 
-        public RingUnblockHandle()
+        public RingUnblockHandle(Ring ring)
         {
-            int res = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
+            _supportsRead = ring.Supports(RingOperation.Read);
+            _supportsFastPoll = ring.SupportsFastPoll;
+
+            int eventfdFlags = EFD_CLOEXEC;
+            if (!_supportsFastPoll)
+            {
+                // Work-around for https://bugzilla.kernel.org/show_bug.cgi?id=208039
+                eventfdFlags |= EFD_NONBLOCK;
+            }
+
+            int res = eventfd(0, eventfdFlags);
             if (res == -1) ThrowHelper.ThrowNewErrnoException();
             _eventfd = res;
 
-            IoVec->iov_base = Buffer;
-            IoVec->iov_len = BufferLen;
+            if (!_supportsRead)
+            {
+                _eventfdIoVecBytes = GC.AllocateUninitializedArray<byte>(SizeOf.iovec, pinned: true);
+                IoVec->iov_base = Buffer;
+                IoVec->iov_len = BufferLen;
+            }
         }
 
         private iovec* IoVec => (iovec*) MemoryHelper.UnsafeGetAddressOfPinnedArrayData(_eventfdIoVecBytes);
@@ -41,7 +57,14 @@ namespace IoUring.Transport.Internals
         public void NotifyStartOfEventLoop(Ring ring)
         {
             int fd = _eventfd;
-            ring.PreparePollAdd(fd, (ushort) POLLIN, AsyncOperation.PollEventFd(fd).AsUlong());
+            if (_supportsFastPoll)
+            {
+                ring.PrepareRead(fd, Buffer, (uint) BufferLen, default, AsyncOperation.ReadEventFd(fd).AsUlong());
+            }
+            else
+            {
+                ring.PreparePollAdd(fd, (ushort) POLLIN, AsyncOperation.PollEventFd(fd).AsUlong());
+            }
         }
 
         private void ReadPollEventFd(Submission submission)
@@ -77,31 +100,42 @@ namespace IoUring.Transport.Internals
         private void ReadEventFd(Submission submission)
         {
             int fd = _eventfd;
-            submission.PrepareReadV(fd, IoVec, 1, userData: AsyncOperation.ReadEventFd(fd).AsUlong());
+            if (_supportsRead)
+            {
+                submission.PrepareRead(fd, Buffer, (uint) BufferLen, default, userData: AsyncOperation.ReadEventFd(fd).AsUlong());
+            }
+            else
+            {
+                submission.PrepareReadV(fd, IoVec, 1, userData: AsyncOperation.ReadEventFd(fd).AsUlong());
+            }
         }
 
         public void CompleteEventFdRead(Submission submission, int result)
         {
-            if (result < 0)
+            if (result < 0 && HandleCompleteEventFdReadError(result))
             {
-                HandleCompleteEventFdReadError(submission, result);
                 return;
             }
 
-            ReadPollEventFd(submission);
-        }
-
-        private void HandleCompleteEventFdReadError(Submission submission, int result)
-        {
-            var err = -result;
-            if (err == EAGAIN || err == EINTR)
+            if (_supportsFastPoll)
             {
                 ReadEventFd(submission);
             }
             else
             {
+                ReadPollEventFd(submission);
+            }
+        }
+
+        private bool HandleCompleteEventFdReadError(int result)
+        {
+            var err = -result;
+            if (err != EAGAIN && err != EINTR)
+            {
                 ThrowHelper.ThrowNewErrnoException(err);
             }
+
+            return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

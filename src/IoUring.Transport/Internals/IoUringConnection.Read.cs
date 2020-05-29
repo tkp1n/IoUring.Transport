@@ -28,10 +28,7 @@ namespace IoUring.Transport.Internals
                 return;
             }
 
-            int memoryRequirement = DetermineReadAllocation();
-            int ioVecs = PrepareReadIoVecs(memoryRequirement);
-            _readIoVecsInUse = (byte) ioVecs;
-            Read(ring, ioVecs);
+            Read(ring);
         }
 
         private void HandleCompleteReadPollError(Ring ring, int result)
@@ -112,16 +109,36 @@ namespace IoUring.Transport.Internals
 
         public void Read(Ring ring)
         {
-            Read(ring, _readIoVecsInUse);
+            var vecsInUse = _readIoVecsInUse;
+            if (vecsInUse == 0)
+            {
+                var memoryRequirement = DetermineReadAllocation();
+                vecsInUse = (byte) PrepareReadIoVecs(memoryRequirement);
+                _readIoVecsInUse = vecsInUse;
+            }
+
+            Read(ring, vecsInUse);
         }
 
         private unsafe void Read(Ring ring, int ioVecs)
         {
             int socket = Socket;
-            if (!ring.TryPrepareReadV(socket, ReadVecs, ioVecs, 0, 0, AsyncOperation.ReadFrom(socket).AsUlong()))
+            var vecs = ReadVecs;
+            if (ioVecs == 1 && HasCapability(ConnectionCapabilities.Recv))
             {
-                _scheduler.ScheduleRead(socket);
-                return;
+                if (!ring.TryPrepareRecv(socket, vecs->iov_base, vecs->iov_len, 0, AsyncOperation.ReadFrom(socket).AsUlong()))
+                {
+                    _scheduler.ScheduleRead(socket);
+                    return;
+                }
+            }
+            else
+            {
+                if (!ring.TryPrepareReadV(socket, vecs, ioVecs, 0, 0, AsyncOperation.ReadFrom(socket).AsUlong()))
+                {
+                    _scheduler.ScheduleRead(socket);
+                    return;
+                }
             }
 
             SetFlag(ConnectionState.Reading);
@@ -193,6 +210,7 @@ namespace IoUring.Transport.Internals
 
         private unsafe void DisposeReadHandles()
         {
+            _readIoVecsInUse = 0;
             foreach (var readHandle in ReadHandles)
             {
                 if (readHandle.Pointer == (void*) IntPtr.Zero) break;
@@ -203,10 +221,16 @@ namespace IoUring.Transport.Internals
         private void FlushRead(Ring ring)
         {
             var result = FlushAsync();
-            if (result.CompletedSuccessfully)
+            if (result.CompletedSuccessfully) // likely
             {
-              // likely
-                ReadPoll(ring);
+                if (HasCapability(ConnectionCapabilities.FastPoll))
+                {
+                    Read(ring);
+                }
+                else
+                {
+                    ReadPoll(ring);
+                }
             }
             else if (result.CompletedExceptionally)
             {
@@ -250,13 +274,21 @@ namespace IoUring.Transport.Internals
                 return result;
             }
 
+            int socket = Socket;
             if (error != null)
             {
-                _scheduler.ScheduleAsyncInboundCompletion(Socket, result.GetError());
+                _scheduler.ScheduleAsyncInboundCompletion(socket, result.GetError());
             }
             else
             {
-                _scheduler.ScheduleAsyncReadPoll(Socket);
+                if (HasCapability(ConnectionCapabilities.FastPoll))
+                {
+                    _scheduler.ScheduleAsyncRead(socket);
+                }
+                else
+                {
+                    _scheduler.ScheduleAsyncReadPoll(socket);
+                }
             }
 
             return result;

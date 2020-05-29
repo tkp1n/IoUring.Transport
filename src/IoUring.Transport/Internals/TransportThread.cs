@@ -83,9 +83,14 @@ namespace IoUring.Transport.Internals
             while (sqesAvailable-- > 0 && _asyncOperationQueue.TryDequeue(out var operation))
             {
                 var (socket, operationType) = operation;
-                if (operationType == OperationType.WritePoll)
+                if (operationType == OperationType.Write)
                 {
-                    // hot path
+                    // hot path with fast-poll support
+                    _connections[socket].Write(ring);
+                }
+                else if (operationType == OperationType.WritePoll)
+                {
+                    // hot path without fast-poll support
                     _connections[socket].WritePoll(ring);
                 }
                 else
@@ -114,12 +119,6 @@ namespace IoUring.Transport.Internals
 
                 case OperationType.Read:
                     _connections[socket].Read(ring);
-                    return;
-                case OperationType.WritePoll:
-                    _connections[socket].WritePoll(ring);
-                    return;
-                case OperationType.Write:
-                    _connections[socket].Write(ring);
                     return;
                 case OperationType.AcceptPoll:
                     _acceptSockets[socket].AcceptPoll(ring);
@@ -300,8 +299,7 @@ namespace IoUring.Transport.Internals
             acceptSocket.AcceptQueue.TryWrite(connection);
 
             acceptSocket.AcceptPoll(ring);
-            connection.ReadPoll(ring);
-            connection.ReadFromApp(ring);
+            connection.StartSendAndReceive(ring);
         }
 
         private void CompleteCloseAcceptSocket(int socket)
@@ -320,8 +318,7 @@ namespace IoUring.Transport.Internals
                 receiver.AcceptQueue.TryWrite(connection);
 
                 receiver.PollReceive(ring);
-                connection.ReadPoll(ring);
-                connection.ReadFromApp(ring);
+                connection.StartSendAndReceive(ring);
             }
         }
 
@@ -329,16 +326,14 @@ namespace IoUring.Transport.Internals
         {
             context.CompleteConnect(ring, result);
 
-            context.ReadPoll(ring);
-            context.ReadFromApp(ring);
+            context.StartSendAndReceive(ring);
         }
 
         private static void CompleteWritePollDuringConnect(int result, IoUringConnection context, Ring ring)
         {
             if (((OutboundConnection) context).CompleteWritePollDuringConnect(ring, result))
             {
-                context.ReadPoll(ring);
-                context.ReadFromApp(ring);
+                context.StartSendAndReceive(ring);
             }
         }
 

@@ -72,9 +72,21 @@ namespace IoUring.Transport.Internals
             _unblockHandle.UnblockIfRequired();
         }
 
+        public void ScheduleAsyncRead(int socket)
+        {
+            _asyncOperationQueue.Enqueue(AsyncOperation.ReadFrom(socket));
+            _unblockHandle.UnblockIfRequired();
+        }
+
         public void ScheduleRead(int socket)
         {
             _asyncOperationQueue.Enqueue(AsyncOperation.ReadFrom(socket));
+        }
+
+        public void ScheduleAsyncWrite(int socket)
+        {
+            _asyncOperationQueue.Enqueue(AsyncOperation.WriteTo(socket));
+            _unblockHandle.UnblockIfRequired();
         }
 
         public void ScheduleWrite(int socket)

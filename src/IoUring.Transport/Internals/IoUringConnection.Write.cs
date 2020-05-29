@@ -28,9 +28,7 @@ namespace IoUring.Transport.Internals
                 return;
             }
 
-            var ioVecs = PrepareWriteIoVecs();
-            _writeIoVecsInUse = (byte) ioVecs;
-            Write(ring, ioVecs);
+            Write(ring);
         }
 
         private void HandleCompleteWritePollError(Ring ring, int result)
@@ -72,16 +70,35 @@ namespace IoUring.Transport.Internals
 
         public void Write(Ring ring)
         {
-            Write(ring, _writeIoVecsInUse);
+            var vecsInUse = _writeIoVecsInUse;
+            if (vecsInUse == 0)
+            {
+                vecsInUse = (byte) PrepareWriteIoVecs();
+                _writeIoVecsInUse = vecsInUse;
+            }
+
+            Write(ring, vecsInUse);
         }
 
         private unsafe void Write(Ring ring, int ioVecs)
         {
             int socket = Socket;
-            if (!ring.TryPrepareWriteV(socket, WriteVecs, ioVecs, 0, 0, AsyncOperation.WriteTo(socket).AsUlong()))
+            var vecs = WriteVecs;
+            if (ioVecs == 1 && HasCapability(ConnectionCapabilities.Send))
             {
-                _scheduler.ScheduleWrite(socket);
-                return;
+                if (!ring.TryPrepareSend(socket, vecs->iov_base, vecs->iov_len, 0, AsyncOperation.WriteTo(socket).AsUlong()))
+                {
+                    _scheduler.ScheduleWrite(socket);
+                    return;
+                }
+            }
+            else
+            {
+                if (!ring.TryPrepareWriteV(socket, vecs, ioVecs, 0, 0, AsyncOperation.WriteTo(socket).AsUlong()))
+                {
+                    _scheduler.ScheduleWrite(socket);
+                    return;
+                }
             }
 
             SetFlag(ConnectionState.Writing);
@@ -152,6 +169,7 @@ namespace IoUring.Transport.Internals
 
         private unsafe void DisposeWriteHandles()
         {
+            _writeIoVecsInUse = 0;
             foreach (var writeHandle in WriteHandles)
             {
                 if (writeHandle.Pointer == (void*) IntPtr.Zero) break;
@@ -159,13 +177,19 @@ namespace IoUring.Transport.Internals
             }
         }
 
-        public void ReadFromApp(Ring ring)
+        private void ReadFromApp(Ring ring)
         {
             var result = ReadAsync();
-            if (result.CompletedSuccessfully)
+            if (result.CompletedSuccessfully) // unlikely
             {
-                // unlikely
-                WritePoll(ring);
+                if (HasCapability(ConnectionCapabilities.FastPoll))
+                {
+                    Write(ring);
+                }
+                else
+                {
+                    WritePoll(ring);
+                }
             }
             else if (result.CompletedExceptionally)
             {
@@ -211,13 +235,21 @@ namespace IoUring.Transport.Internals
                 return result;
             }
 
+            int socket = Socket;
             if (error != null)
             {
-                _scheduler.ScheduleAsyncOutboundCompletion(Socket, result.GetError());
+                _scheduler.ScheduleAsyncOutboundCompletion(socket, result.GetError());
             }
             else
             {
-                _scheduler.ScheduleAsyncWritePoll(Socket);
+                if (HasCapability(ConnectionCapabilities.FastPoll))
+                {
+                    _scheduler.ScheduleAsyncWrite(socket);
+                }
+                else
+                {
+                    _scheduler.ScheduleAsyncWritePoll(socket);
+                }
             }
 
             return result;

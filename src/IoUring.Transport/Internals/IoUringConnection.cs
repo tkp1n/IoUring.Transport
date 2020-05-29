@@ -24,6 +24,14 @@ namespace IoUring.Transport.Internals
         Closed          = 0x80
     }
 
+    [Flags]
+    internal enum ConnectionCapabilities : byte
+    {
+        Send     = 0x01,
+        Recv     = 0x02,
+        FastPoll = 0x04
+    }
+
     internal abstract partial class IoUringConnection : TransportConnection
     {
         private const int ReadIOVecCount = 8;
@@ -51,6 +59,7 @@ namespace IoUring.Transport.Internals
         private readonly TaskCompletionSource<object> _waitForConnectionClosedTcs;
 
         private ConnectionState _flags;
+        private ConnectionCapabilities _capabilities;
         private byte _readIoVecsInUse;
         private byte _writeIoVecsInUse;
         private int _state;
@@ -112,10 +121,37 @@ namespace IoUring.Transport.Internals
 
         private ReadOnlySequence<byte> CurrentWrite { get; set; }
 
+        public void StartSendAndReceive(Ring ring)
+        {
+            if (ring.Supports(RingOperation.Send))
+            {
+                SetCapability(ConnectionCapabilities.Send);
+            }
+
+            if (ring.Supports(RingOperation.Recv))
+            {
+                SetCapability(ConnectionCapabilities.Recv);
+            }
+
+            if (ring.SupportsFastPoll)
+            {
+                SetCapability(ConnectionCapabilities.FastPoll);
+                Read(ring);
+            }
+            else
+            {
+                ReadPoll(ring);
+            }
+
+            ReadFromApp(ring);
+        }
+
         private bool HasFlag(ConnectionState flag) => (_flags & flag) != 0;
         private void SetFlag(ConnectionState flag) => _flags |= flag;
         private void RemoveFlag(ConnectionState flag) => _flags &= ~flag;
         private static bool HasFlag(ConnectionState flag, ConnectionState test) => (flag & test) != 0;
         private static ConnectionState SetFlag(ConnectionState flag, ConnectionState newFlag) => flag | newFlag;
+        private bool HasCapability(ConnectionCapabilities flag) => (_capabilities & flag) != 0;
+        private void SetCapability(ConnectionCapabilities flag) => _capabilities |= flag;
     }
 }

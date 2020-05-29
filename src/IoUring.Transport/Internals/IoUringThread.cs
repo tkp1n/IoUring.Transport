@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -22,7 +23,7 @@ namespace IoUring.Transport.Internals
         {
             _options = options;
             _ring = new Ring(options.RingSize);
-            _unblockHandle = new RingUnblockHandle();
+            _unblockHandle = new RingUnblockHandle(_ring);
             _cpuId = cpuId;
 
             int id;

@@ -26,7 +26,7 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <Compile Include="..\..\externals\*.cs" Link=".\Externals\*.cs" />
+        <Compile Include="..\..\externals\*.cs" LinkBase="Externals" />
     </ItemGroup>
 
     <ItemGroup>

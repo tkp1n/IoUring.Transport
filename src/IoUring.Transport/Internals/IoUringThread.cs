@@ -101,8 +101,8 @@ namespace IoUring.Transport.Internals
 
             foreach (var completion in _ring.Completions)
             {
-                var result = completion.result;
-                var (socket, operationType) = AsyncOperation.FromUlong(completion.userData);
+                var (result, userData) = completion;
+                var (socket, operationType) = AsyncOperation.FromUlong(userData);
                 if ((operationType & OperationType.EventFdOperation) == 0)
                 {
                     // hot path

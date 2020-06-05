@@ -12,6 +12,12 @@ namespace IoUring.Transport
         private bool _setThreadAffinity;
         private bool _receiveOnIncomingCpu;
 
+        /// <summary>
+        /// Sets the number of transport threads to be used to process I/O.
+        /// This assumes SMT/HT and defaults to the number of physical cores of the CPU.
+        /// <br/>
+        /// Default: <code>Environment.ProcessorCount / 2</code>
+        /// </summary>
         public int ThreadCount
         {
             get => _threadCount;
@@ -26,6 +32,11 @@ namespace IoUring.Transport
             }
         }
 
+        /// <summary>
+        /// If set to true, this sets thread affinity of all I/O threads.
+        /// <br/>
+        /// Default: <code>false</code>
+        /// </summary>
         public bool SetThreadAffinity
         {
             get => _setThreadAffinity;
@@ -55,9 +66,32 @@ namespace IoUring.Transport
             }
         }
 
+        /// <summary>
+        /// Sets whether application logic is scheduled to run on the thread pool or inline of the transport threads.
+        /// <br/>
+        /// Default: <code>PipeScheduler.ThreadPool</code>
+        /// </summary>
         public PipeScheduler ApplicationSchedulingMode { get; set; } = PipeScheduler.ThreadPool;
+
+        /// <summary>
+        /// Enables/Disables Nagle's algorithm.
+        /// <br/>
+        /// Default: <code>true</code>
+        /// </summary>
         public bool TcpNoDelay { get; set; } = true;
+
+        /// <summary>
+        /// Sets the number of entries in the <code>io_uring</code> used by each transport thread.
+        /// <br/>
+        /// Default: 128
+        /// </summary>
         public int RingSize { get; set; } = 128;
+
+        /// <summary>
+        /// Sets the size of the TCP listen backlog.
+        /// <br/>
+        /// Default: 128
+        /// </summary>
         public int ListenBacklog { get; set; } = 128;
     }
 }

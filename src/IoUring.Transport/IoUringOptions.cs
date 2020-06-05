@@ -40,7 +40,7 @@ namespace IoUring.Transport
             }
         }
 
-        public bool ReceiveOnIncomingCpu
+        internal bool ReceiveOnIncomingCpu
         {
             get => _receiveOnIncomingCpu;
             set

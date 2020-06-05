@@ -7,7 +7,7 @@
         <OutputType>Library</OutputType>
         <IsPackable>true</IsPackable>
 
-        <VersionPrefix>0.2.0</VersionPrefix>
+        <VersionPrefix>0.3.0</VersionPrefix>
 
         <Title>IoUring.Transport</Title>
         <Copyright>Copyright © Nicolas Portmann 2020</Copyright>

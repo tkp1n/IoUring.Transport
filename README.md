@@ -17,7 +17,7 @@ using IoUring.Transport;
 public void ConfigureServices(IServiceCollection services)
 {
     // ...
-    services.AddIoUringTransport();
+    services.AddIoUringTransport(); // no-op if OS != Linux or kernel version < 5.4
     // ...
 }
 ```

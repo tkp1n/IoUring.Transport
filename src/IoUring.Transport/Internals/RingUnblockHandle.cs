@@ -23,14 +23,7 @@ namespace IoUring.Transport.Internals
             _supportsRead = ring.Supports(RingOperation.Read);
             _supportsFastPoll = ring.SupportsFastPoll;
 
-            int eventfdFlags = EFD_CLOEXEC;
-            if (!_supportsFastPoll)
-            {
-                // Work-around for https://bugzilla.kernel.org/show_bug.cgi?id=208039
-                eventfdFlags |= EFD_NONBLOCK;
-            }
-
-            int res = eventfd(0, eventfdFlags);
+            int res = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
             if (res == -1) ThrowHelper.ThrowNewErrnoException();
             _eventfd = res;
 

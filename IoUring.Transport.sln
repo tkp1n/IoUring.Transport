@@ -9,6 +9,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IoUring.Transport.Tests", "
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PlatformBenchmarks", "tests\PlatformBenchmarks\PlatformBenchmarks.csproj", "{D08166F6-FC30-42DF-AFD1-CA109CE53C71}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "System.Net.Connections", "System.Net.Connections\System.Net.Connections.csproj", "{EBC4B422-5219-4240-85E3-A4BA251181D2}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -31,5 +33,9 @@ Global
 		{D08166F6-FC30-42DF-AFD1-CA109CE53C71}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D08166F6-FC30-42DF-AFD1-CA109CE53C71}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D08166F6-FC30-42DF-AFD1-CA109CE53C71}.Release|Any CPU.Build.0 = Release|Any CPU
+		{EBC4B422-5219-4240-85E3-A4BA251181D2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{EBC4B422-5219-4240-85E3-A4BA251181D2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{EBC4B422-5219-4240-85E3-A4BA251181D2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{EBC4B422-5219-4240-85E3-A4BA251181D2}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

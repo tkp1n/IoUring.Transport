@@ -1,8 +1,8 @@
 using System;
+using System.Net.Connections;
 using IoUring.Transport.Internals;
 using IoUring.Transport.Internals.Inbound;
 using IoUring.Transport.Internals.Outbound;
-using Microsoft.AspNetCore.Connections;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace IoUring.Transport
@@ -14,8 +14,8 @@ namespace IoUring.Transport
             if (!OsCompatibility.IsCompatible) return serviceCollection;
 
             serviceCollection.AddSingleton<IoUringTransport>();
-            serviceCollection.AddSingleton<IConnectionFactory, ConnectionFactory>();
-            serviceCollection.AddSingleton<IConnectionListenerFactory, ConnectionListenerFactory>();
+            serviceCollection.AddSingleton<ConnectionFactory, IoUringConnectionFactory>();
+            serviceCollection.AddSingleton<ConnectionListenerFactory, IoUringConnectionListenerFactory>();
 
             return serviceCollection;
         }

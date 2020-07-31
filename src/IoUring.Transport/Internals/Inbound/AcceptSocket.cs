@@ -21,7 +21,7 @@ namespace IoUring.Transport.Internals.Inbound
         private readonly byte[] _addr;
         private readonly byte[] _addrLen;
 
-        private AcceptSocket(LinuxSocket socket, EndPoint endPoint, ChannelWriter<ConnectionContext> acceptQueue, MemoryPool<byte> memoryPool, IoUringOptions options, TransportThreadScheduler scheduler)
+        private AcceptSocket(LinuxSocket socket, EndPoint endPoint, ChannelWriter<IoUringConnection> acceptQueue, MemoryPool<byte> memoryPool, IoUringOptions options, TransportThreadScheduler scheduler)
         {
             Socket = socket;
             EndPoint = endPoint;
@@ -38,7 +38,7 @@ namespace IoUring.Transport.Internals.Inbound
             }
         }
 
-        public static AcceptSocket Bind(IPEndPoint ipEndPoint, ChannelWriter<ConnectionContext> acceptQueue, MemoryPool<byte> memoryPool, IoUringOptions options, TransportThreadScheduler scheduler)
+        public static AcceptSocket Bind(IPEndPoint ipEndPoint, ChannelWriter<IoUringConnection> acceptQueue, MemoryPool<byte> memoryPool, IoUringOptions options, TransportThreadScheduler scheduler)
         {
             var domain = ipEndPoint.AddressFamily == AddressFamily.InterNetwork ? AF_INET : AF_INET6;
             LinuxSocket s = new LinuxSocket(domain, SOCK_STREAM, IPPROTO_TCP, blocking: false);
@@ -50,7 +50,7 @@ namespace IoUring.Transport.Internals.Inbound
             return new AcceptSocket(s, s.GetLocalAddress(), acceptQueue, memoryPool, options, scheduler);
         }
 
-        public static AcceptSocket Bind(UnixDomainSocketEndPoint unixDomainSocketEndPoint, ChannelWriter<ConnectionContext> acceptQueue, IoUringOptions options)
+        public static AcceptSocket Bind(UnixDomainSocketEndPoint unixDomainSocketEndPoint, ChannelWriter<IoUringConnection> acceptQueue, IoUringOptions options)
         {
             var socketPath = unixDomainSocketEndPoint.ToString();
             var s = new LinuxSocket(AF_UNIX, SOCK_STREAM, 0, blocking: false);
@@ -61,7 +61,7 @@ namespace IoUring.Transport.Internals.Inbound
             return new AcceptSocket(s, unixDomainSocketEndPoint, acceptQueue, null, options, null);
         }
 
-        public static AcceptSocket Bind(FileHandleEndPoint fileHandleEndPoint, ChannelWriter<ConnectionContext> acceptQueue, IoUringOptions options)
+        public static AcceptSocket Bind(FileHandleEndPoint fileHandleEndPoint, ChannelWriter<IoUringConnection> acceptQueue, IoUringOptions options)
         {
             LinuxSocket s = (int) fileHandleEndPoint.FileHandle;
             var endPoint = s.GetLocalAddress();
@@ -70,7 +70,7 @@ namespace IoUring.Transport.Internals.Inbound
 
         public LinuxSocket Socket { get; }
         public EndPoint EndPoint { get; }
-        public ChannelWriter<ConnectionContext> AcceptQueue { get; }
+        public ChannelWriter<IoUringConnection> AcceptQueue { get; }
         public Task UnbindCompletion => _unbindCompletion.Task;
         public LinuxSocket[] Handlers { get; set; }
         private sockaddr* Addr => IsIpSocket ? (sockaddr*) MemoryHelper.UnsafeGetAddressOfPinnedArrayData(_addr) : (sockaddr*) 0;

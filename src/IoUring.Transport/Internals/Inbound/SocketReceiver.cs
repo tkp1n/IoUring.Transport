@@ -22,7 +22,7 @@ namespace IoUring.Transport.Internals.Inbound
         private readonly byte[] _header = GC.AllocateUninitializedArray<byte>(SizeOf.msghdr, pinned: true);
         private volatile bool _disposed;
 
-        public SocketReceiver(LinuxSocket recipient, ChannelWriter<ConnectionContext> acceptQueue, EndPoint endPoint, MemoryPool<byte> memoryPool, IoUringOptions options, TransportThreadScheduler scheduler)
+        public SocketReceiver(LinuxSocket recipient, ChannelWriter<IoUringConnection> acceptQueue, EndPoint endPoint, MemoryPool<byte> memoryPool, IoUringOptions options, TransportThreadScheduler scheduler)
         {
             _recipient = recipient;
             AcceptQueue = acceptQueue;
@@ -32,7 +32,7 @@ namespace IoUring.Transport.Internals.Inbound
             _scheduler = scheduler;
         }
 
-        public ChannelWriter<ConnectionContext> AcceptQueue { get; }
+        public ChannelWriter<IoUringConnection> AcceptQueue { get; }
 
         public void PollReceive(Ring ring)
         {

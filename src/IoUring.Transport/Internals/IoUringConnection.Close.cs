@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Net.Connections;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Connections;
@@ -129,18 +130,13 @@ namespace IoUring.Transport.Internals
             _waitForConnectionClosedTcs.SetResult(null);
         }
 
-        public void Abort(Ring ring, Exception error)
+        public void Abort(Ring ring)
         {
             Outbound.CancelPendingRead();
             CancelWriteToSocket(ring);
         }
 
-        public override void Abort(ConnectionAbortedException abortReason)
-        {
-            _scheduler.ScheduleAsyncAbort(Socket, abortReason);
-        }
-
-        public override async ValueTask DisposeAsync()
+        protected override async ValueTask CloseAsyncCore(ConnectionCloseMethod method, CancellationToken cancellationToken)
         {
             await Transport.Input.CompleteAsync();
             await Transport.Output.CompleteAsync();

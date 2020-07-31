@@ -24,7 +24,7 @@ namespace IoUring.Transport.Internals.Inbound
             _transportThreads = transportThreads;
         }
 
-        public EndPoint Bind(UnixDomainSocketEndPoint unixDomainSocketEndPoint, ChannelWriter<ConnectionContext> acceptQueue)
+        public EndPoint Bind(UnixDomainSocketEndPoint unixDomainSocketEndPoint, ChannelWriter<IoUringConnection> acceptQueue)
         {
             var context = AcceptSocket.Bind(unixDomainSocketEndPoint, acceptQueue, _options);
             Bind(context);
@@ -32,7 +32,7 @@ namespace IoUring.Transport.Internals.Inbound
             return context.EndPoint;
         }
 
-        public EndPoint Bind(FileHandleEndPoint fileHandleEndPoint, ChannelWriter<ConnectionContext> acceptQueue)
+        public EndPoint Bind(FileHandleEndPoint fileHandleEndPoint, ChannelWriter<IoUringConnection> acceptQueue)
         {
             var context = AcceptSocket.Bind(fileHandleEndPoint, acceptQueue, _options);
             Bind(context);

@@ -3,12 +3,12 @@ using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Net;
+using System.Net.Connections;
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using IoUring.Transport.Internals.Inbound;
 using IoUring.Transport.Internals.Outbound;
-using Microsoft.AspNetCore.Connections;
 using static Tmds.Linux.LibC;
 
 namespace IoUring.Transport.Internals
@@ -31,16 +31,16 @@ namespace IoUring.Transport.Internals
             _scheduler = new TransportThreadScheduler(_unblockHandle, _asyncOperationQueue, _asyncOperationStates);
         }
 
-        public ValueTask<ConnectionContext> Connect(EndPoint endpoint)
+        public ValueTask<Connection> Connect(EndPoint endpoint)
         {
-            var tcs = new TaskCompletionSource<ConnectionContext>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var tcs = new TaskCompletionSource<Connection>(TaskCreationOptions.RunContinuationsAsynchronously);
             var context = OutboundConnection.Create(endpoint, tcs, _memoryPool, _options, _scheduler);
             _scheduler.ScheduleAsyncAddAndConnect(context.Socket, context);
 
-            return new ValueTask<ConnectionContext>(tcs.Task);
+            return new ValueTask<Connection>(tcs.Task);
         }
 
-        public EndPoint Bind(IPEndPoint endpoint, ChannelWriter<ConnectionContext> connectionSource)
+        public EndPoint Bind(IPEndPoint endpoint, ChannelWriter<IoUringConnection> connectionSource)
         {
             var context = AcceptSocket.Bind(endpoint, connectionSource, _memoryPool, _options, _scheduler);
             _acceptSocketsPerEndPoint[(IPEndPoint) context.EndPoint] = context;
@@ -65,7 +65,7 @@ namespace IoUring.Transport.Internals
             return default;
         }
 
-        public LinuxSocket RegisterHandlerFor(ChannelWriter<ConnectionContext> acceptQueue, EndPoint endPoint)
+        public LinuxSocket RegisterHandlerFor(ChannelWriter<IoUringConnection> acceptQueue, EndPoint endPoint)
         {
             var acceptSocketPair = new LinuxSocketPair(AF_UNIX, SOCK_STREAM, 0, blocking: false);
             var socketReceiver = new SocketReceiver(acceptSocketPair.Socket1, acceptQueue, endPoint, _memoryPool, _options, _scheduler);
@@ -154,6 +154,10 @@ namespace IoUring.Transport.Internals
                 case OperationType.CloseAcceptSocket:
                     _acceptSockets[socket].Close(ring);
                     return;
+                case OperationType.Abort:
+                    if (_connections.TryGetValue(socket, out var connection))
+                        connection.Abort(ring);
+                    return;
             }
 
             _asyncOperationStates.Remove(socket, out var state);
@@ -170,10 +174,6 @@ namespace IoUring.Transport.Internals
                     return;
                 case OperationType.CompleteOutbound:
                     _connections[socket].CompleteOutbound(ring, (Exception) state);
-                    return;
-                case OperationType.Abort:
-                    if (_connections.TryGetValue(socket, out var connection))
-                        connection.Abort(ring, (ConnectionAbortedException) state);
                     return;
             }
         }

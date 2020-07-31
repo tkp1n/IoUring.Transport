@@ -1,6 +1,7 @@
 using System;
 using System.Buffers;
 using System.Net;
+using System.Net.Connections;
 using System.Net.Sockets;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Connections;
@@ -13,9 +14,9 @@ namespace IoUring.Transport.Internals.Outbound
     internal sealed class OutboundConnection : IoUringConnection, IConnectionInherentKeepAliveFeature
     {
         private readonly byte[] _addr = GC.AllocateUninitializedArray<byte>(SizeOf.sockaddr_storage, pinned: true);
-        private TaskCompletionSource<ConnectionContext> _connectCompletion;
+        private TaskCompletionSource<Connection> _connectCompletion;
 
-        private OutboundConnection(LinuxSocket socket, EndPoint remote, MemoryPool<byte> memoryPool, IoUringOptions options, TransportThreadScheduler scheduler, TaskCompletionSource<ConnectionContext> connectCompletion)
+        private OutboundConnection(LinuxSocket socket, EndPoint remote, MemoryPool<byte> memoryPool, IoUringOptions options, TransportThreadScheduler scheduler, TaskCompletionSource<Connection> connectCompletion)
             : base(socket, null, remote, memoryPool, options, scheduler)
         {
             unsafe
@@ -38,13 +39,9 @@ namespace IoUring.Transport.Internals.Outbound
             }
 
             _connectCompletion = connectCompletion;
-
-            // Add IConnectionInherentKeepAliveFeature to the tcp connection impl since Kestrel doesn't implement
-            // the IConnectionHeartbeatFeature
-            Features.Set<IConnectionInherentKeepAliveFeature>(this);
         }
 
-        public static OutboundConnection Create(EndPoint endpoint, TaskCompletionSource<ConnectionContext> connectCompletion, MemoryPool<byte> memoryPool, IoUringOptions options, TransportThreadScheduler scheduler)
+        public static OutboundConnection Create(EndPoint endpoint, TaskCompletionSource<Connection> connectCompletion, MemoryPool<byte> memoryPool, IoUringOptions options, TransportThreadScheduler scheduler)
         {
             LinuxSocket s = default;
             switch (endpoint)
@@ -169,7 +166,7 @@ namespace IoUring.Transport.Internals.Outbound
         private void SetupPostSuccessfulConnect()
         {
             var ep = Socket.GetLocalAddress();
-            LocalEndPoint = ep ?? RemoteEndPoint;
+            _localEndPoint = ep ?? RemoteEndPoint;
 
             _connectCompletion.TrySetResult(this);
             _connectCompletion = null;

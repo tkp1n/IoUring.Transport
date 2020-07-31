@@ -1,6 +1,7 @@
 using System;
 using System.IO.Pipelines;
 using System.Net;
+using System.Net.Connections;
 using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Channels;
@@ -9,40 +10,45 @@ using Microsoft.AspNetCore.Connections;
 
 namespace IoUring.Transport.Internals.Inbound
 {
-    internal sealed class ConnectionListener : IConnectionListener
+    internal sealed class IoUringConnectionListener : ConnectionListener
     {
         private readonly IoUringTransport _transport;
         private readonly IoUringOptions _options;
-        private readonly Channel<ConnectionContext> _acceptQueue;
+        private readonly Channel<IoUringConnection> _acceptQueue;
+        private EndPoint _localEndPoint;
         private ConnectionListenerState _state = ConnectionListenerState.New;
 
-        private ConnectionListener(EndPoint endpoint, IoUringTransport transport, IoUringOptions options)
+        private IoUringConnectionListener(EndPoint endpoint, IoUringTransport transport, IoUringOptions options, IConnectionProperties listenerProperties)
         {
             _transport = transport;
             _options = options;
-            _acceptQueue = Channel.CreateUnbounded<ConnectionContext>(new UnboundedChannelOptions
+            ListenerProperties = listenerProperties;
+            _acceptQueue = Channel.CreateUnbounded<IoUringConnection>(new UnboundedChannelOptions
             {
-                SingleReader = true, // reads happen sequentially
+                SingleReader = false,
                 SingleWriter = false,
                 AllowSynchronousContinuations = options.ApplicationSchedulingMode == PipeScheduler.Inline
             });
 
-            EndPoint = endpoint;
+            _localEndPoint = endpoint;
         }
 
-        public EndPoint EndPoint { get; private set; }
+        public override EndPoint LocalEndPoint => _localEndPoint;
+
+        public override IConnectionProperties ListenerProperties { get; }
 
         private object Gate => this;
 
-        public static async ValueTask<IConnectionListener> BindAsync(EndPoint endpoint, IoUringTransport transport, IoUringOptions options)
+        public static async ValueTask<ConnectionListener> BindAsync(EndPoint endpoint, IoUringTransport transport, IoUringOptions ioUringOptions, IConnectionProperties options = null, CancellationToken cancellationToken = default)
         {
-            var listener = new ConnectionListener(endpoint, transport, options);
-            await listener.BindAsync();
+            var listener = new IoUringConnectionListener(endpoint, transport, ioUringOptions, options);
+            await listener.BindAsync(cancellationToken);
             return listener;
         }
 
-        private async ValueTask BindAsync()
+        private async ValueTask BindAsync(CancellationToken cancellationToken = default)
         {
+            // TODO: support cancellation
             lock (Gate)
             {
                 if (_state >= ConnectionListenerState.Disposing) ThrowHelper.ThrowNewObjectDisposedException(ThrowHelper.ExceptionArgument.ConnectionListener);
@@ -53,7 +59,7 @@ namespace IoUring.Transport.Internals.Inbound
             try
             {
                 _transport.IncrementThreadRefCount();
-                var endpoint = EndPoint;
+                var endpoint = LocalEndPoint;
                 switch (endpoint)
                 {
                     case IPEndPoint ipEndPoint when ipEndPoint.AddressFamily == AddressFamily.InterNetwork || ipEndPoint.AddressFamily == AddressFamily.InterNetworkV6:
@@ -64,7 +70,7 @@ namespace IoUring.Transport.Internals.Inbound
                             boundEndPoint = thread.Bind(ipEndPoint, _acceptQueue);
                         }
 
-                        EndPoint = boundEndPoint;
+                        _localEndPoint = boundEndPoint;
                         if (_options.ReceiveOnIncomingCpu)
                         {
                             threads[0].SetReceiveOnIncomingCpu((IPEndPoint) boundEndPoint);
@@ -72,10 +78,10 @@ namespace IoUring.Transport.Internals.Inbound
 
                         break;
                     case UnixDomainSocketEndPoint unixDomainSocketEndPoint:
-                        EndPoint = _transport.AcceptThread.Bind(unixDomainSocketEndPoint, _acceptQueue);
+                        _localEndPoint = _transport.AcceptThread.Bind(unixDomainSocketEndPoint, _acceptQueue);
                         break;
                     case FileHandleEndPoint fileHandleEndPoint:
-                        EndPoint = _transport.AcceptThread.Bind(fileHandleEndPoint, _acceptQueue);
+                        _localEndPoint = _transport.AcceptThread.Bind(fileHandleEndPoint, _acceptQueue);
                         break;
                     default:
                         ThrowHelper.ThrowNewNotSupportedException_EndPointNotSupported();
@@ -95,7 +101,7 @@ namespace IoUring.Transport.Internals.Inbound
             }
         }
 
-        public async ValueTask<ConnectionContext> AcceptAsync(CancellationToken cancellationToken = default)
+        public override async ValueTask<Connection> AcceptAsync(IConnectionProperties options = null, CancellationToken cancellationToken = default)
         {
             lock (Gate)
             {
@@ -105,13 +111,14 @@ namespace IoUring.Transport.Internals.Inbound
 
             await foreach (var connection in _acceptQueue.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
             {
+                connection.ProvidedProperties = options;
                 return connection;
             }
 
             return null;
         }
 
-        public async ValueTask UnbindAsync(CancellationToken cancellationToken = default)
+        private async ValueTask UnbindAsync()
         {
             lock (Gate)
             {
@@ -122,7 +129,7 @@ namespace IoUring.Transport.Internals.Inbound
 
             try
             {
-                if (EndPoint is IPEndPoint ipEndPoint)
+                if (LocalEndPoint is IPEndPoint ipEndPoint)
                 {
                     var threads = _transport.TransportThreads;
                     foreach (var thread in threads)
@@ -132,7 +139,7 @@ namespace IoUring.Transport.Internals.Inbound
                 }
                 else
                 {
-                    await _transport.AcceptThread.Unbind(EndPoint);
+                    await _transport.AcceptThread.Unbind(LocalEndPoint);
                 }
 
                 _acceptQueue.Writer.TryComplete();
@@ -150,13 +157,22 @@ namespace IoUring.Transport.Internals.Inbound
             }
         }
 
-        public ValueTask DisposeAsync()
+        protected override void Dispose(bool disposing)
         {
+            ValueTask t = DisposeAsyncCore();
+
+            if (t.IsCompleted) t.GetAwaiter().GetResult();
+            t.AsTask().GetAwaiter().GetResult();
+        }
+
+        protected override async ValueTask DisposeAsyncCore()
+        {
+            await UnbindAsync();
             lock (Gate)
             {
                 if (_state >= ConnectionListenerState.Disposing)
                 {
-                    return default; // Dispose already in progress
+                    return; // Dispose already in progress
                 }
 
                 _state = ConnectionListenerState.Disposing;
@@ -169,8 +185,6 @@ namespace IoUring.Transport.Internals.Inbound
             {
                 _state = ConnectionListenerState.Disposed;
             }
-
-            return default;
         }
 
         private enum ConnectionListenerState

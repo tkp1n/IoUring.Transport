@@ -3,10 +3,10 @@ using System.Buffers;
 using System.Diagnostics;
 using System.IO.Pipelines;
 using System.Net;
+using System.Net.Connections;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Connections;
 using Tmds.Linux;
 
 namespace IoUring.Transport.Internals
@@ -32,7 +32,7 @@ namespace IoUring.Transport.Internals
         FastPoll = 0x04
     }
 
-    internal abstract partial class IoUringConnection : TransportConnection
+    internal abstract partial class IoUringConnection
     {
         private const int ReadIOVecCount = 8;
         private const int WriteIOVecCount = 8;
@@ -43,6 +43,9 @@ namespace IoUring.Transport.Internals
         private const int PauseOutputWriterThreshold = 64 * 1024;
 
         private const int MaxBufferSize = 4096;
+
+        protected EndPoint _localEndPoint;
+        private EndPoint _remoteEndPoint;
 
         private readonly Action _onOnFlushedToApp;
         private readonly Action _onReadFromApp;
@@ -64,12 +67,13 @@ namespace IoUring.Transport.Internals
         private byte _writeIoVecsInUse;
         private int _state;
 
-        protected IoUringConnection(LinuxSocket socket, EndPoint local, EndPoint remote, MemoryPool<byte> memoryPool, IoUringOptions options, TransportThreadScheduler scheduler)
+        protected IoUringConnection(LinuxSocket socket, EndPoint local, EndPoint remote, MemoryPool<byte> memoryPool, IoUringOptions options, TransportThreadScheduler scheduler, IConnectionProperties properties = default)
         {
+            ProvidedProperties = properties;
             Socket = socket;
 
-            LocalEndPoint = local;
-            RemoteEndPoint = remote;
+            _localEndPoint = local;
+            _remoteEndPoint = remote;
 
             MemoryPool = memoryPool;
             Debug.Assert(MaxBufferSize == MemoryPool.MaxBufferSize);
@@ -99,15 +103,18 @@ namespace IoUring.Transport.Internals
             }
         }
 
+        public override IConnectionProperties ConnectionProperties => this;
+        public override EndPoint LocalEndPoint => _localEndPoint;
+        public override EndPoint RemoteEndPoint => _remoteEndPoint;
+        protected override IDuplexPipe CreatePipe() => Transport;
         public LinuxSocket Socket { get; }
-
-        public override MemoryPool<byte> MemoryPool { get; }
 
         private unsafe iovec* ReadVecs => _iovec;
         private unsafe iovec* WriteVecs => _iovec + ReadIOVecCount;
 
         private MemoryHandle[] ReadHandles { get; } = new MemoryHandle[ReadIOVecCount];
         private MemoryHandle[] WriteHandles { get; } = new MemoryHandle[WriteIOVecCount];
+        public IDuplexPipe Application { get; }
 
         /// <summary>
         /// Data read from the socket will be flushed to this <see cref="PipeWriter"/>

@@ -25,23 +25,23 @@ namespace IoUring.Transport.Tests
             });
             await using var transport = new IoUringTransport(options);
 
-            var listenerFactory = new ConnectionListenerFactory(transport, options);
+            var listenerFactory = new IoUringConnectionListenerFactory(transport, options);
             await using (var listener = await listenerFactory.BindAsync(endPoint()))
             {
                 for (int i = 0; i < 3; i++)
                 {
-                    var client = new EchoClient(listener.EndPoint);
+                    var client = new EchoClient(listener.LocalEndPoint);
                     await using (var connection = await listener.AcceptAsync())
                     {
                         for (int j = 0; j < 3; j++)
                         {
                             var exchange = client.ExchangeData(length);
-                            await LoopBack(connection.Transport, length);
+                            await LoopBack(connection.Pipe, length);
                             await exchange;
                         }
 
-                        await connection.Transport.Output.CompleteAsync();
-                        await connection.Transport.Input.CompleteAsync();
+                        await connection.Pipe.Output.CompleteAsync();
+                        await connection.Pipe.Input.CompleteAsync();
                     }
                     client.Close();
                 }

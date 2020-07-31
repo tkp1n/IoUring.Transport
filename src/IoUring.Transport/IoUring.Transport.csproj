@@ -43,4 +43,8 @@
         </AssemblyAttribute>
     </ItemGroup>
 
+    <ItemGroup>
+      <ProjectReference Include="..\..\System.Net.Connections\System.Net.Connections.csproj" />
+    </ItemGroup>
+
 </Project>

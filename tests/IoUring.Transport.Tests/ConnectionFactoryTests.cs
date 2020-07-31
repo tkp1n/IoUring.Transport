@@ -32,7 +32,7 @@ namespace IoUring.Transport.Tests
                 ApplicationSchedulingMode = schedulerMode,
                 RingSize = ringSize
             }));
-            await using var connectionFactory = new ConnectionFactory(transport);
+            await using var connectionFactory = new IoUringConnectionFactory(transport);
 
             for (int i = 0; i < 3; i++)
             {
@@ -40,11 +40,11 @@ namespace IoUring.Transport.Tests
 
                 for (int j = 0; j < 3; j++)
                 {
-                    await SendReceiveData(connection.Transport, length);
+                    await SendReceiveData(connection.Pipe, length);
                 }
 
-                await connection.Transport.Output.CompleteAsync();
-                await connection.Transport.Input.CompleteAsync();
+                await connection.Pipe.Output.CompleteAsync();
+                await connection.Pipe.Input.CompleteAsync();
             }
         }
 

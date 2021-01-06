@@ -11,7 +11,7 @@ namespace IoUring.Transport.Internals
     {
         private const int Disposed = -1;
 
-        private object _lock = new object();
+        private object _lock = new();
         private AcceptThread _acceptThread;
         private int _refCount;
         private readonly IoUringOptions _options;

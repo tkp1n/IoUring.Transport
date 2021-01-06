@@ -76,13 +76,13 @@ namespace IoUring.Transport.Internals
         public const ushort BPF_TAX = 0x00;
         public const ushort BPF_TXA = 0x80;
 
-        public static sock_filter BPF_STMT(ushort code, uint k) => new sock_filter
+        public static sock_filter BPF_STMT(ushort code, uint k) => new()
         {
             code = code,
             k = k
         };
 
-        public static sock_filter BPF_JUMP(ushort code, uint k, byte jt, byte jf) => new sock_filter
+        public static sock_filter BPF_JUMP(ushort code, uint k, byte jt, byte jf) => new()
         {
             code = code,
             jt = jt,

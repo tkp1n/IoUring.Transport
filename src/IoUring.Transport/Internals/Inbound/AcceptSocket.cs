@@ -14,7 +14,7 @@ namespace IoUring.Transport.Internals.Inbound
 {
     internal sealed unsafe class AcceptSocket
     {
-        private readonly TaskCompletionSource<object> _unbindCompletion;
+        private readonly TaskCompletionSource _unbindCompletion;
         private readonly MemoryPool<byte> _memoryPool;
         private readonly IoUringOptions _options;
         private readonly TransportThreadScheduler _scheduler;
@@ -30,7 +30,7 @@ namespace IoUring.Transport.Internals.Inbound
             _options = options;
             _scheduler = scheduler;
 
-            _unbindCompletion = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _unbindCompletion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             if (endPoint is IPEndPoint) // _addr is null by intention for the remaining EndPoint types
             {
                 _addr = GC.AllocateUninitializedArray<byte>(SizeOf.sockaddr_storage, pinned: true);
@@ -238,7 +238,7 @@ namespace IoUring.Transport.Internals.Inbound
 
         public void CompleteClose()
         {
-            _unbindCompletion.TrySetResult(null);
+            _unbindCompletion.TrySetResult();
         }
     }
 }

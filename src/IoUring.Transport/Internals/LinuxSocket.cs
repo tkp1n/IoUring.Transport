@@ -239,7 +239,7 @@ namespace IoUring.Transport.Internals
 
         public void Close() => close(_fd);
 
-        public static implicit operator LinuxSocket(int v) => new LinuxSocket(v);
+        public static implicit operator LinuxSocket(int v) => new(v);
         public static implicit operator int(LinuxSocket s) => s._fd;
 
         public override string ToString() => _fd.ToString();

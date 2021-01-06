@@ -56,7 +56,7 @@ namespace IoUring.Transport.Internals
         private ValueTaskAwaiter<ReadResult> _readResultAwaiter;
 
         private readonly CancellationTokenSource _connectionClosedTokenSource;
-        private readonly TaskCompletionSource<object> _waitForConnectionClosedTcs;
+        private readonly TaskCompletionSource _waitForConnectionClosedTcs;
 
         private ConnectionState _flags;
         private ConnectionCapabilities _capabilities;
@@ -78,7 +78,7 @@ namespace IoUring.Transport.Internals
 
             _connectionClosedTokenSource = new CancellationTokenSource();
             ConnectionClosed = _connectionClosedTokenSource.Token;
-            _waitForConnectionClosedTcs = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _waitForConnectionClosedTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
             var appScheduler = options.ApplicationSchedulingMode;
             var inputOptions = new PipeOptions(memoryPool, appScheduler, PipeScheduler.Inline, PauseInputWriterThreshold, PauseInputWriterThreshold / 2, useSynchronizationContext: false);

@@ -9,14 +9,14 @@ namespace IoUring.Transport.Internals
     internal abstract class IoUringThread : IAsyncDisposable
     {
         public const int NoCpuAffinity = -1;
-        private static readonly Dictionary<string, int> _threadIds = new Dictionary<string, int>();
+        private static readonly Dictionary<string, int> _threadIds = new();
 
         protected readonly IoUringOptions _options;
         protected readonly Ring _ring;
         protected readonly RingUnblockHandle _unblockHandle;
         private readonly int _cpuId;
         private readonly Thread _thread;
-        private readonly TaskCompletionSource<object> _threadCompletion = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _threadCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private volatile bool _disposed;
 
         protected IoUringThread(string name, IoUringOptions options, int cpuId)
@@ -69,7 +69,7 @@ namespace IoUring.Transport.Internals
                 skip = Complete();
             }
 
-            _threadCompletion.TrySetResult(null);
+            _threadCompletion.TrySetResult();
         }
 
         private LoopState Submit(LoopState state, uint skip)

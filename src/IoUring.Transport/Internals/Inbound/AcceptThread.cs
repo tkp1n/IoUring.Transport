@@ -10,9 +10,9 @@ namespace IoUring.Transport.Internals.Inbound
 {
     internal sealed class AcceptThread : IoUringThread
     {
-        private readonly ConcurrentQueue<AsyncOperation> _asyncOperationQueue = new ConcurrentQueue<AsyncOperation>();
-        private readonly ConcurrentDictionary<int, AcceptSocket> _acceptSockets = new ConcurrentDictionary<int, AcceptSocket>();
-        private readonly ConcurrentDictionary<EndPoint, AcceptSocket> _acceptSocketsPerEndPoint = new ConcurrentDictionary<EndPoint, AcceptSocket>();
+        private readonly ConcurrentQueue<AsyncOperation> _asyncOperationQueue = new();
+        private readonly ConcurrentDictionary<int, AcceptSocket> _acceptSockets = new();
+        private readonly ConcurrentDictionary<EndPoint, AcceptSocket> _acceptSocketsPerEndPoint = new();
         private readonly AcceptThreadScheduler _scheduler;
         private readonly TransportThread[] _transportThreads;
         private int _schedulerIndex;

@@ -4,7 +4,7 @@ namespace IoUring.Transport.Internals
 {
     internal readonly struct AsyncOperationResult
     {
-        public static readonly Exception CompleteWithoutErrorSentinel = new Exception();
+        public static readonly Exception CompleteWithoutErrorSentinel = new();
         private readonly bool _completedSynchronously;
         private readonly Exception _error;
 

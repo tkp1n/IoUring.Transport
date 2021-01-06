@@ -68,27 +68,27 @@ namespace IoUring.Transport
         public static AsyncOperation FromUlong(ulong value)
             => Unsafe.As<ulong, AsyncOperation>(ref Unsafe.AsRef(value));
 
-        public static AsyncOperation ReadFrom(int fd) => new AsyncOperation(fd, OperationType.Read);
-        public static AsyncOperation ReadPollFor(int fd) => new AsyncOperation(fd, OperationType.ReadPoll);
-        public static AsyncOperation WriteTo(int fd) => new AsyncOperation(fd, OperationType.Write);
-        public static AsyncOperation WritePollFor(int fd) => new AsyncOperation(fd, OperationType.WritePoll);
-        public static AsyncOperation PollEventFd(int eventFd) => new AsyncOperation(eventFd, OperationType.EventFdReadPoll);
-        public static AsyncOperation ReadEventFd(int eventFd) => new AsyncOperation(eventFd, OperationType.EventFdRead);
-        public static AsyncOperation AddAndConnect(int fd) => new AsyncOperation(fd, OperationType.AddAndConnect);
-        public static AsyncOperation ConnectOn(int fd) => new AsyncOperation(fd, OperationType.Connect);
-        public static AsyncOperation WritePollDuringConnect(int fd) => new AsyncOperation(fd, OperationType.WritePollDuringConnect);
-        public static AsyncOperation PollAcceptFrom(int fd) => new AsyncOperation(fd, OperationType.AcceptPoll);
-        public static AsyncOperation AddAndAcceptPoll(int fd) => new AsyncOperation(fd, OperationType.AddAndAcceptPoll);
-        public static AsyncOperation AcceptFrom(int fd) => new AsyncOperation(fd, OperationType.Accept);
-        public static AsyncOperation CompleteInboundOf(int fd) => new AsyncOperation(fd, OperationType.CompleteInbound);
-        public static AsyncOperation CompleteOutboundOf(int fd) => new AsyncOperation(fd, OperationType.CompleteOutbound);
-        public static AsyncOperation CancelOperation(OperationType op, int fd) => new AsyncOperation(fd, OperationType.CancelGeneric | op);
-        public static AsyncOperation CancelAccept(int fd) => new AsyncOperation(fd, OperationType.CancelAccept);
-        public static AsyncOperation Abort(int fd) => new AsyncOperation(fd, OperationType.Abort);
-        public static AsyncOperation UnbindFrom(int fd) => new AsyncOperation(fd, OperationType.Unbind);
-        public static AsyncOperation CloseConnection(int fd) => new AsyncOperation(fd, OperationType.CloseConnection);
-        public static AsyncOperation CloseAcceptSocket(int fd) => new AsyncOperation(fd, OperationType.CloseAcceptSocket);
-        public static AsyncOperation RecvSocketPoll(int fd) => new AsyncOperation(fd, OperationType.RecvSocketPoll);
-        public static AsyncOperation RecvSocket(int fd) => new AsyncOperation(fd, OperationType.RecvSocket);
+        public static AsyncOperation ReadFrom(int fd) => new(fd, OperationType.Read);
+        public static AsyncOperation ReadPollFor(int fd) => new(fd, OperationType.ReadPoll);
+        public static AsyncOperation WriteTo(int fd) => new(fd, OperationType.Write);
+        public static AsyncOperation WritePollFor(int fd) => new(fd, OperationType.WritePoll);
+        public static AsyncOperation PollEventFd(int eventFd) => new(eventFd, OperationType.EventFdReadPoll);
+        public static AsyncOperation ReadEventFd(int eventFd) => new(eventFd, OperationType.EventFdRead);
+        public static AsyncOperation AddAndConnect(int fd) => new(fd, OperationType.AddAndConnect);
+        public static AsyncOperation ConnectOn(int fd) => new(fd, OperationType.Connect);
+        public static AsyncOperation WritePollDuringConnect(int fd) => new(fd, OperationType.WritePollDuringConnect);
+        public static AsyncOperation PollAcceptFrom(int fd) => new(fd, OperationType.AcceptPoll);
+        public static AsyncOperation AddAndAcceptPoll(int fd) => new(fd, OperationType.AddAndAcceptPoll);
+        public static AsyncOperation AcceptFrom(int fd) => new(fd, OperationType.Accept);
+        public static AsyncOperation CompleteInboundOf(int fd) => new(fd, OperationType.CompleteInbound);
+        public static AsyncOperation CompleteOutboundOf(int fd) => new(fd, OperationType.CompleteOutbound);
+        public static AsyncOperation CancelOperation(OperationType op, int fd) => new(fd, OperationType.CancelGeneric | op);
+        public static AsyncOperation CancelAccept(int fd) => new(fd, OperationType.CancelAccept);
+        public static AsyncOperation Abort(int fd) => new(fd, OperationType.Abort);
+        public static AsyncOperation UnbindFrom(int fd) => new(fd, OperationType.Unbind);
+        public static AsyncOperation CloseConnection(int fd) => new(fd, OperationType.CloseConnection);
+        public static AsyncOperation CloseAcceptSocket(int fd) => new(fd, OperationType.CloseAcceptSocket);
+        public static AsyncOperation RecvSocketPoll(int fd) => new(fd, OperationType.RecvSocketPoll);
+        public static AsyncOperation RecvSocket(int fd) => new(fd, OperationType.RecvSocket);
     }
 }

@@ -126,7 +126,7 @@ namespace IoUring.Transport.Internals
         private void CancelConnectionClosedToken()
         {
             _connectionClosedTokenSource.Cancel();
-            _waitForConnectionClosedTcs.SetResult(null);
+            _waitForConnectionClosedTcs.SetResult();
         }
 
         public void Abort(Ring ring, Exception error)

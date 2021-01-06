@@ -15,12 +15,12 @@ namespace IoUring.Transport.Internals
 {
     internal sealed class TransportThread : IoUringThread
     {
-        private readonly ConcurrentQueue<AsyncOperation> _asyncOperationQueue = new ConcurrentQueue<AsyncOperation>();
-        private readonly ConcurrentDictionary<int, object> _asyncOperationStates = new ConcurrentDictionary<int, object>();
-        private readonly ConcurrentDictionary<IPEndPoint, AcceptSocket> _acceptSocketsPerEndPoint = new ConcurrentDictionary<IPEndPoint, AcceptSocket>();
-        private readonly Dictionary<int, AcceptSocket> _acceptSockets = new Dictionary<int, AcceptSocket>();
-        private readonly Dictionary<int, IoUringConnection> _connections = new Dictionary<int, IoUringConnection>();
-        private readonly ConcurrentDictionary<int, SocketReceiver> _socketReceivers = new ConcurrentDictionary<int, SocketReceiver>();
+        private readonly ConcurrentQueue<AsyncOperation> _asyncOperationQueue = new();
+        private readonly ConcurrentDictionary<int, object> _asyncOperationStates = new();
+        private readonly ConcurrentDictionary<IPEndPoint, AcceptSocket> _acceptSocketsPerEndPoint = new();
+        private readonly Dictionary<int, AcceptSocket> _acceptSockets = new();
+        private readonly Dictionary<int, IoUringConnection> _connections = new();
+        private readonly ConcurrentDictionary<int, SocketReceiver> _socketReceivers = new();
         private readonly TransportThreadScheduler _scheduler;
         private readonly MemoryPool<byte> _memoryPool;
 

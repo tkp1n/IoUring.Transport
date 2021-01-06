@@ -19,6 +19,7 @@ namespace PlatformBenchmarks
 
             // Handle the transport type
             var webHost = builder.GetSetting("KestrelTransport");
+            Console.WriteLine($"Transport: {webHost}");
 
             // Handle the thread count
             var threadCountRaw = builder.GetSetting("threadCount");
@@ -39,6 +40,12 @@ namespace PlatformBenchmarks
                     {
                         options.IOQueueCount = theadCount.Value;
                     }
+
+#if NETCOREAPP5_0 || NET5_0 || NET6_0
+                    options.WaitForDataBeforeAllocatingBuffer = false;
+
+                    Console.WriteLine($"Options: WaitForData={options.WaitForDataBeforeAllocatingBuffer}, IOQueue={options.IOQueueCount}");
+#endif
                 });
             }
             else if (string.Equals(webHost, "LinuxTransport", StringComparison.OrdinalIgnoreCase))

@@ -2,12 +2,14 @@
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
 using System;
+using System.Linq;
 using System.Net;
+using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 #if DATABASE
 using Npgsql;
-using MySql.Data.MySqlClient;
 #endif
 
 namespace PlatformBenchmarks
@@ -16,7 +18,7 @@ namespace PlatformBenchmarks
     {
         public static string[] Args;
 
-        public static void Main(string[] args)
+        public static async Task Main(string[] args)
         {
             Args = args;
 
@@ -35,13 +37,19 @@ namespace PlatformBenchmarks
             var host = BuildWebHost(args);
             var config = (IConfiguration)host.Services.GetService(typeof(IConfiguration));
             BatchUpdateString.DatabaseServer = config.Get<AppSettings>().Database;
-            host.Run();
+#if DATABASE
+            await BenchmarkApplication.Db.PopulateCache();
+#endif
+            await host.RunAsync();
         }
 
         public static IWebHost BuildWebHost(string[] args)
         {
+            Console.WriteLine($"Args: {string.Join(' ', args)}");
+
             var config = new ConfigurationBuilder()
                 .AddJsonFile("appsettings.json")
+                .AddEnvironmentVariables()
                 .AddEnvironmentVariables(prefix: "ASPNETCORE_")
                 .AddCommandLine(args)
                 .Build();
@@ -49,18 +57,19 @@ namespace PlatformBenchmarks
             var appSettings = config.Get<AppSettings>();
 #if DATABASE
             Console.WriteLine($"Database: {appSettings.Database}");
+            Console.WriteLine($"ConnectionString: {appSettings.ConnectionString}");
 
             if (appSettings.Database == DatabaseServer.PostgreSql)
             {
-                BenchmarkApplication.Db = new RawDb(new ConcurrentRandom(), NpgsqlFactory.Instance, appSettings);
+                BenchmarkApplication.Db = new RawDb(new ConcurrentRandom(), appSettings);
             }
-            else if (appSettings.Database == DatabaseServer.MySql)
+            else
             {
-                BenchmarkApplication.Db = new RawDb(new ConcurrentRandom(), MySqlClientFactory.Instance, appSettings);
+                throw new NotSupportedException($"{appSettings.Database} is not supported");
             }
 #endif
 
-            var host = new WebHostBuilder()
+            var hostBuilder = new WebHostBuilder()
                 .UseBenchmarksConfiguration(config)
                 .UseKestrel((context, options) =>
                 {
@@ -71,8 +80,21 @@ namespace PlatformBenchmarks
                         builder.UseHttpApplication<BenchmarkApplication>();
                     });
                 })
-                .UseStartup<Startup>()
-                .Build();
+                .UseStartup<Startup>();
+
+#if NET5_0 || NET6_0
+            hostBuilder.UseSockets(options =>
+            {
+                options.WaitForDataBeforeAllocatingBuffer = false;
+
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+                {
+                    options.UnsafePreferInlineScheduling = Environment.GetEnvironmentVariable("DOTNET_SYSTEM_NET_SOCKETS_INLINE_COMPLETIONS") == "1";
+                }
+            });
+#endif
+
+            var host = hostBuilder.Build();
 
             return host;
         }

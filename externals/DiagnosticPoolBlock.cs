@@ -5,6 +5,8 @@ using System.Threading;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
+#nullable enable
+
 namespace System.Buffers
 {
     /// <summary>
@@ -22,7 +24,7 @@ namespace System.Buffers
         private MemoryHandle? _memoryHandle;
         private Memory<byte> _memory;
 
-        private readonly object _syncObj = new object();
+        private readonly object _syncObj = new();
         private bool _isDisposed;
         private int _pinCount;
 
@@ -214,7 +216,7 @@ namespace System.Buffers
             }
         }
 
-        public StackTrace Leaser { get; set; }
+        public StackTrace? Leaser { get; set; }
 
         public void Track()
         {

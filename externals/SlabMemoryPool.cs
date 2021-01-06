@@ -6,6 +6,8 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading;
 
+#nullable enable
+
 namespace System.Buffers
 {
     /// <summary>
@@ -29,7 +31,7 @@ namespace System.Buffers
         /// Max allocation block size for pooled blocks,
         /// larger values can be leased but they will be disposed after use rather than returned to the pool.
         /// </summary>
-        public override int MaxBufferSize => _blockSize;
+        public override int MaxBufferSize { get; } = _blockSize;
 
         /// <summary>
         /// The size of a block. 4096 is chosen because most operating systems use 4k pages.
@@ -45,13 +47,13 @@ namespace System.Buffers
         /// Thread-safe collection of blocks which are currently in the pool. A slab will pre-allocate all of the block tracking objects
         /// and add them to this collection. When memory is requested it is taken from here first, and when it is returned it is re-added.
         /// </summary>
-        private readonly ConcurrentQueue<MemoryPoolBlock> _blocks = new ConcurrentQueue<MemoryPoolBlock>();
+        private readonly ConcurrentQueue<MemoryPoolBlock> _blocks = new();
 
         /// <summary>
         /// Thread-safe collection of slabs which have been allocated by this pool. As long as a slab is in this collection and slab.IsActive,
         /// the blocks will be added to _blocks when returned.
         /// </summary>
-        private readonly ConcurrentStack<MemoryPoolSlab> _slabs = new ConcurrentStack<MemoryPoolSlab>();
+        private readonly ConcurrentStack<MemoryPoolSlab> _slabs = new();
 
         /// <summary>
         /// This is part of implementing the IDisposable pattern.
@@ -60,7 +62,7 @@ namespace System.Buffers
 
         private int _totalAllocatedBlocks;
 
-        private readonly object _disposeSync = new object();
+        private readonly object _disposeSync = new();
 
         /// <summary>
         /// This default value passed in to Rent to use the default value for the pool.
@@ -89,7 +91,7 @@ namespace System.Buffers
                 MemoryPoolThrowHelper.ThrowObjectDisposedException(MemoryPoolThrowHelper.ExceptionArgument.MemoryPool);
             }
 
-            if (_blocks.TryDequeue(out MemoryPoolBlock block))
+            if (_blocks.TryDequeue(out var block))
             {
                 // block successfully taken from the stack - return it
 
@@ -112,7 +114,7 @@ namespace System.Buffers
             _slabs.Push(slab);
 
             // Get the address for alignment
-            IntPtr basePtr = Marshal.UnsafeAddrOfPinnedArrayElement(slab.PinnedArray, 0);
+            IntPtr basePtr = Marshal.UnsafeAddrOfPinnedArrayElement(slab.PinnedArray!, 0);
             // Page align the blocks
             var offset = (int)((((ulong)basePtr + (uint)_blockSize - 1) & ~((uint)_blockSize - 1)) - (ulong)basePtr);
             // Ensure page aligned
@@ -121,7 +123,7 @@ namespace System.Buffers
             var blockCount = (_slabLength - offset) / _blockSize;
             Interlocked.Add(ref _totalAllocatedBlocks, blockCount);
 
-            MemoryPoolBlock block = null;
+            MemoryPoolBlock? block = null;
 
             for (int i = 0; i < blockCount; i++)
             {
@@ -138,7 +140,7 @@ namespace System.Buffers
                 offset += _blockSize;
             }
 
-            return block;
+            return block!;
         }
 
         /// <summary>
@@ -195,7 +197,7 @@ namespace System.Buffers
 
                 if (disposing)
                 {
-                    while (_slabs.TryPop(out MemoryPoolSlab slab))
+                    while (_slabs.TryPop(out var slab))
                     {
                         // dispose managed state (managed objects).
                         slab.Dispose();
@@ -203,7 +205,7 @@ namespace System.Buffers
                 }
 
                 // Discard blocks in pool
-                while (_blocks.TryDequeue(out MemoryPoolBlock block))
+                while (_blocks.TryDequeue(out var block))
                 {
                     GC.SuppressFinalize(block);
                 }

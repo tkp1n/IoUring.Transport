@@ -24,7 +24,7 @@ namespace System.Buffers
 
         private readonly List<Exception> _blockAccessExceptions;
 
-        private readonly TaskCompletionSource<object> _allBlocksReturned;
+        private readonly TaskCompletionSource _allBlocksReturned;
 
         private int _totalBlocks;
 
@@ -40,7 +40,7 @@ namespace System.Buffers
             _rentTracking = rentTracking;
             _blocks = new HashSet<DiagnosticPoolBlock>();
             _syncObj = new object();
-            _allBlocksReturned = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _allBlocksReturned = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             _blockAccessExceptions = new List<Exception>();
         }
 
@@ -131,6 +131,8 @@ namespace System.Buffers
                 {
                     SetAllBlocksReturned();
                 }
+
+                _pool.Dispose();
             }
         }
 
@@ -142,13 +144,13 @@ namespace System.Buffers
             }
             else
             {
-                _allBlocksReturned.SetResult(null);
+                _allBlocksReturned.SetResult();
             }
         }
 
         private AggregateException CreateAccessExceptions()
         {
-            return new AggregateException("Exceptions occurred while accessing blocks", _blockAccessExceptions.ToArray());
+            return new("Exceptions occurred while accessing blocks", _blockAccessExceptions.ToArray());
         }
 
         public async Task WhenAllBlocksReturnedAsync(TimeSpan timeout)
